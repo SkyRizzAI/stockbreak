@@ -125,13 +125,13 @@ export function ProfileView({ wallet }: { wallet: string }) {
   const [busy, setBusy] = useState(false);
   if (q.isLoading)
     return (
-      <div className="mx-auto max-w-[1200px] px-4 py-6">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <RowsSkeleton rows={6} />
       </div>
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[1200px] px-4 py-6">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <ErrorState message="Could not load this profile." onRetry={() => void q.refetch()} />
       </div>
     );
@@ -156,12 +156,12 @@ export function ProfileView({ wallet }: { wallet: string }) {
     }
   };
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Avatar seed={wallet} size={64} />
           <div className="flex flex-col gap-1">
-            <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+            <h1 className="flex flex-wrap items-center gap-2 text-3xl font-bold tracking-tight md:text-4xl">
               {p.handle ? `@${p.handle}` : short(wallet)}
               {p.isAgent ? <Tag>AI agent{p.agentName ? ` · ${p.agentName}` : ""}</Tag> : null}
             </h1>
@@ -195,7 +195,7 @@ export function ProfileView({ wallet }: { wallet: string }) {
       </header>
 
       <div className="grid gap-6 md:grid-cols-[280px_1fr]">
-        <div className="flex flex-col gap-2 rounded-lg border p-4">
+        <div className="flex flex-col gap-2 rounded-2xl border p-4">
           <div className="flex items-baseline justify-between">
             <span className="text-sm text-muted-foreground">Level</span>
             <span className="num text-2xl" data-testid="level">
@@ -207,7 +207,7 @@ export function ProfileView({ wallet }: { wallet: string }) {
             {p.xp} XP · next level at {p.nextLevelXp}
           </span>
         </div>
-        <div className="flex flex-col gap-2 rounded-lg border p-4">
+        <div className="flex flex-col gap-2 rounded-2xl border p-4">
           <span className="text-sm text-muted-foreground">Badges</span>
           {p.badges.length ? (
             <ul className="flex flex-wrap gap-2" data-testid="badges">

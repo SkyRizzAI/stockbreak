@@ -1,6 +1,6 @@
 /**
- * Deterministic index identity (§8.3): a tiny weight bar derived from the
- * pubkey + composition. Monochrome shades only.
+ * Deterministic index identity (§8.3, refs \"Index mark\"): stripes sized by
+ * weight in the four greens.
  */
 import { cn } from "cn";
 
@@ -10,6 +10,10 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
+/** Stripe colours: the four greens (refs "Index mark"), cycled per asset. */
+export const MARKS = ["var(--mark-1)", "var(--mark-2)", "var(--mark-3)", "var(--mark-4)"];
+
+/** Index mark: one stripe per asset, sized by weight, in the four greens. */
 export function IndexGlyph({
   pubkey,
   weights,
@@ -22,34 +26,37 @@ export function IndexGlyph({
   className?: string;
 }) {
   const total = weights.reduce((a, b) => a + b, 0) || 1;
-  const h = hash(pubkey);
-  const rot = h % 4;
-  let x = 0;
+  // Orientation varies per index so neighbouring marks read differently.
+  const vertical = hash(pubkey) % 2 === 0;
+  const pad = Math.max(3, Math.round(size / 10));
+  const gap = size >= 28 ? 2 : 1;
+  const inner = size - pad * 2 - gap * Math.max(weights.length - 1, 0);
+  let at = pad;
   const bars = weights.map((w, i) => {
-    const width = (w / total) * size;
-    const shade = 20 + ((((h >> (i * 3)) & 7) * 8 + i * 13) % 60);
-    const r = { x, width, shade };
-    x += width;
+    const len = Math.max(1.5, (w / total) * inner);
+    const r = { at, len, fill: MARKS[i % MARKS.length] };
+    at += len + gap;
     return r;
   });
+  const inside = size - pad * 2;
   return (
     <svg
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
-      className={cn("shrink-0 rounded-md border", className)}
+      className={cn("shrink-0 rounded-md bg-raised", className)}
       aria-hidden
-      style={{ transform: `rotate(${rot * 90}deg)` }}
     >
       {bars.map((b, i) => (
         <rect
           // biome-ignore lint/suspicious/noArrayIndexKey: static order
           key={i}
-          x={b.x}
-          y={0}
-          width={Math.max(b.width - 0.5, 0.5)}
-          height={size}
-          style={{ fill: `color-mix(in oklch, var(--foreground) ${b.shade}%, var(--background))` }}
+          x={vertical ? b.at : pad}
+          y={vertical ? pad : b.at}
+          width={vertical ? b.len : inside}
+          height={vertical ? inside : b.len}
+          rx={1.5}
+          style={{ fill: b.fill }}
         />
       ))}
     </svg>
@@ -64,7 +71,7 @@ export function TickerMono({ symbol, className }: { symbol: string; className?: 
   return (
     <span
       className={cn(
-        "num inline-flex h-6 min-w-9 shrink-0 items-center justify-center rounded border bg-muted px-1 text-[10px] font-medium text-muted-foreground",
+        "mono inline-flex h-6 min-w-9 shrink-0 items-center justify-center rounded-sm border bg-surface px-1 text-[10px] font-medium text-muted-foreground",
         className,
       )}
       aria-hidden

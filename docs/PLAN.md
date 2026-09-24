@@ -448,7 +448,7 @@ badges           (wallet, badge, awarded_at)  PK(wallet, badge)
 prices           (symbol, ts, price_micro_usd, source, synthetic bool)  PK(symbol, ts)
 faucet_claims    (id, wallet, kind SOL|USDC, amount, cluster, created_at)  index(wallet, kind, created_at)
 auth_sessions    (token_hash PK, wallet, created_at, expires_at)                        -- D033
-posts            (id PK, author, index null, body, like_count, comment_count, created_at, deleted_at)
+posts            (id PK, author, index null, card_variant null, body, like_count, comment_count, created_at, deleted_at)  -- card_variant: D035
                   index(created_at), index(author, created_at), index(index, created_at)
 post_likes       (post_id, wallet, created_at)  PK(post_id, wallet)
 post_comments    (id PK, post_id, author, body, created_at, deleted_at)  index(post_id, created_at), index(author, created_at)
@@ -470,6 +470,8 @@ Satu proses, beberapa loop dengan interval terpisah (env), masing-masing idempot
 - OG: `/i/[pubkey]/opengraph-image`.
 
 ### 7.6 `apps/mcp`
+> D036: progres langkah /sign dipegang server dan maju hanya dengan signature yang terverifikasi on-chain (bisa dilanjutkan setelah terputus, tanpa mengulang swap). Status yang sudah dimulai kedaluwarsa 1 jam setelah `expiresAt`.
+
 Mode human-in-the-loop (default): tool `build_*` menyimpan **intent** di `sign_intents` dan mengembalikan link `{WEB_URL}/sign?id=<intent>` (+ ringkasan manusiawi). Halaman `/sign` membangun transaksi dengan blockhash baru saat user siap, mendukung multi-transaksi, lalu memperbarui status intent. Tool `get_intent_status` untuk agent mengecek hasilnya. Mode agent wallet: aktif bila `AGENT_KEYPAIR_PATH` diset; tool `agent_*` menandatangani sendiri (program tetap membatasi).
 
 | Tool | Fungsi |
@@ -482,7 +484,7 @@ Mode human-in-the-loop (default): tool `build_*` menyimpan **intent** di `sign_i
 | `get_portfolio` | Posisi & PnL wallet |
 | `simulate_rebalance` | Pasangan swap yang disarankan + lolos/tidak mandate + alasannya |
 | `build_create_index`, `build_join`, `build_redeem`, `build_clone` | Intent + link sign |
-| `get_intent_status` | Status intent & signature |
+| `get_intent_status` | Status intent & signature; untuk create/clone juga `result.index` (D036) |
 | `agent_info`, `agent_register` | Identitas agent; register via tanda tangan pesan → `users.is_agent` |
 | `agent_create_index`, `agent_join`, `agent_rebalance`, `agent_propose_update` | Aksi dengan keypair agent |
 
@@ -502,6 +504,7 @@ Aturan: tolak cluster selain localnet/devnet; batas jumlah per aksi via env; tid
   - `ipo_survivor`: index-mu mengalami `IpoMigrated`.
 - Profil: handle, avatar generatif dari `avatar_seed`, bio, index buatan, posisi, badge, follow/unfollow kreator.
 - **Feed & diskusi (D033)**: halaman `/feed` dengan tab **Following** (post + aktivitas on-chain dari wallet yang di-follow, aktivitas index yang dipegang/dibuat viewer, dan post sendiri) dan **All** (semua post + aktivitas penting: create, rebalance, update bobot, IPO, clone). Post singkat (opsional menautkan satu index; tampil juga di bagian Discussion halaman index dan di profil), like, komentar satu tingkat. Penulis bisa menghapus post/komentarnya sendiri (soft delete).
+- **Kartu index (D035)**: index dapat dibagikan ke feed sebagai kartu (nama, deskripsi, koleksi token + bobot, return 30d + sparkline, TVL, drawdown maks vs SPYx, kreator) dalam 3 variasi header yang diturunkan dari data index: `mark` (pola index mark), `tokens` (tile token sebesar bobotnya), `chart` (kurva performa). Variasi dipilih penulis saat berbagi dan disimpan per post. Kartu kreator ala "top creators" di Home.
 - **Anti-spam (D033)**:
   - Tulis (post/komentar/like) butuh sesi: wallet menandatangani pesan sign-in sekali, lalu server memberi cookie httpOnly 24 jam. Hanya hash token yang disimpan. Origin diperiksa (CSRF).
   - Post & komentar butuh "skin in the game": wallet punya ≥ 1 event on-chain `Joined`/`IndexCreated` di cluster ini.
@@ -550,6 +553,8 @@ Target rasa: produk fintech yang tenang dan presisi (referensi rasa: Linear, Ver
 Gradien ungu-biru, glassmorphism, blur/glow, neon, emoji di UI, hero marketing dengan 3 kartu fitur ber-ikon, ilustrasi 3D/stok, background animasi, teks gradien, border gradien, semua elemen di-center, kartu di dalam kartu di dalam kartu, ikon di setiap label, badge warna-warni tanpa makna, copy "Revolutionize/Unlock/Seamless", placeholder lorem ipsum, angka palsu tanpa label.
 
 ### 8.3 Design tokens
+> **Diperbarui (D034):** palet dan komponen kini mengikuti `refs/Stocklana.html` ("quiet green desk"): keluarga hijau gelap, mint hanya untuk aksi utama/logo/return positif, Manrope + IBM Plex Mono, glass hanya di top bar dan panel Join/Redeem. Token final ada di `apps/web/app/globals.css`. Aturan anti-"AI slop" §8.2 tetap berlaku.
+
 - Font: Geist Sans (UI), Geist Mono (angka, alamat, simbol ticker).
 - Skala teks: 12 / 13 / 14 (default) / 16 / 20 / 24 / 32 / 48.
 - Spasi: kelipatan 4px. Lebar konten maks 1200px (halaman data), 640px (form).

@@ -52,7 +52,7 @@ export function CommandPalette() {
       <Button
         variant="outline"
         size="lg"
-        className="hidden w-48 justify-between text-muted-foreground lg:flex"
+        className="hidden h-10 w-60 justify-between px-3 text-muted-foreground lg:flex"
         onClick={() => setOpen(true)}
       >
         <span className="inline-flex items-center gap-2">
@@ -91,7 +91,7 @@ export function CommandPalette() {
                   value={`idx ${i.name} ${i.symbol}`}
                   onSelect={() => go(`/i/${i.pubkey}`)}
                 >
-                  <span className="num text-xs text-muted-foreground">{i.symbol}</span>
+                  <span className="mono text-xs text-muted-foreground">{i.symbol}</span>
                   {i.name}
                 </CommandItem>
               ))}

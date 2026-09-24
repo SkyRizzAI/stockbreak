@@ -17,7 +17,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCreatorsBoard, useIndexBoard } from "@/lib/api";
-import { pct } from "@/lib/format";
+import { pct, short } from "@/lib/format";
 import type { IndexSummary } from "@/lib/types";
 
 const RANGES = [
@@ -27,33 +27,63 @@ const RANGES = [
   { v: "all", k: "retAll" },
 ] as const;
 
-function Podium({ rows, k }: { rows: IndexSummary[]; k: (typeof RANGES)[number]["k"] }) {
+function Podium({
+  rows,
+  k,
+  benchmark,
+}: {
+  rows: IndexSummary[];
+  k: (typeof RANGES)[number]["k"];
+  benchmark: number | null;
+}) {
   return (
-    <ol className="grid gap-3 sm:grid-cols-3">
-      {rows.slice(0, 3).map((r, i) => (
-        <li key={r.pubkey}>
-          <Link
-            href={`/i/${r.pubkey}`}
-            className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/40"
-          >
-            <span className="num w-5 text-sm text-muted-foreground">{i + 1}</span>
-            <IndexGlyph pubkey={r.pubkey} weights={r.assets.map((a) => a.targetWeightBps)} />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm font-medium">{r.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {r.creatorHandle ? `@${r.creatorHandle}` : r.symbol}
+    <ol className="grid gap-3 md:grid-cols-3">
+      {rows.slice(0, 3).map((r, i) => {
+        const ret = r[k];
+        const vs = ret !== null && benchmark !== null ? (ret - benchmark) * 100 : null;
+        return (
+          <li key={r.pubkey}>
+            <Link
+              href={`/i/${r.pubkey}`}
+              className="flex h-full flex-col gap-4 rounded-2xl border bg-surface p-6 transition-colors hover:border-ring/40"
+            >
+              <span className="flex items-center justify-between text-sm">
+                <span className="font-semibold">No. {i + 1}</span>
+                <span className="mono text-xs text-muted-foreground">
+                  {r.creatorHandle ? `@${r.creatorHandle}` : short(r.creator)}
+                </span>
               </span>
-            </span>
-            <Delta value={r[k]} />
-          </Link>
-        </li>
-      ))}
+              <span className="flex items-center gap-3">
+                <IndexGlyph
+                  pubkey={r.pubkey}
+                  weights={r.assets.map((a) => a.targetWeightBps)}
+                  size={36}
+                />
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-lg font-bold">{r.name}</span>
+                  <span className="mono text-xs text-muted-foreground">{r.symbol}</span>
+                </span>
+              </span>
+              <span className="flex items-baseline gap-3">
+                <Delta value={ret} className="text-[40px] leading-none font-bold" />
+                {vs !== null ? (
+                  <span className="num text-[13px] text-muted-foreground">
+                    {vs >= 0 ? "+" : ""}
+                    {vs.toFixed(2)} pp vs SPYx
+                  </span>
+                ) : null}
+              </span>
+            </Link>
+          </li>
+        );
+      })}
     </ol>
   );
 }
 
 export default function LeaderboardPage() {
   const [range, setRange] = useState<(typeof RANGES)[number]["v"]>("7d");
+  const [tab, setTab] = useState("indexes");
   const [type, setType] = useState("all");
   const k = RANGES.find((r) => r.v === range)?.k ?? "ret7d";
   const idx = useIndexBoard(range, type);
@@ -72,31 +102,34 @@ export default function LeaderboardPage() {
     </ToggleGroup>
   );
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 py-8 md:px-8">
       <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Leaderboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Leaderboard</h1>
         <SimulatedBadge />
       </div>
-      <Tabs defaultValue="indexes">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as string)}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <TabsList>
+          <TabsList variant="line">
             <TabsTrigger value="indexes">Indexes</TabsTrigger>
             <TabsTrigger value="creators">Creators</TabsTrigger>
           </TabsList>
           <div className="flex flex-wrap gap-2">
-            <ToggleGroup
-              value={[range]}
-              onValueChange={(v) => setRange(((v as string[])[0] as typeof range) ?? "7d")}
-              variant="outline"
-              size="sm"
-              aria-label="Range"
-            >
-              {RANGES.map((r) => (
-                <ToggleGroupItem key={r.v} value={r.v}>
-                  {r.v.toUpperCase()}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+            {/* Creator stats are all-time: the range only applies to index returns. */}
+            {tab === "indexes" ? (
+              <ToggleGroup
+                value={[range]}
+                onValueChange={(v) => setRange(((v as string[])[0] as typeof range) ?? "7d")}
+                variant="outline"
+                size="sm"
+                aria-label="Range"
+              >
+                {RANGES.map((r) => (
+                  <ToggleGroupItem key={r.v} value={r.v}>
+                    {r.v.toUpperCase()}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            ) : null}
             {typeToggle}
           </div>
         </div>
@@ -115,7 +148,7 @@ export default function LeaderboardPage() {
               <p className="text-sm text-muted-foreground">
                 SPYx {range.toUpperCase()}: <span className="num">{pct(idx.data.benchmark)}</span>
               </p>
-              <Podium rows={idx.data.rows} k={k} />
+              <Podium rows={idx.data.rows} k={k} benchmark={idx.data.benchmark} />
               <IndexTable rows={idx.data.rows} retKey={k} retLabel={range.toUpperCase()} rank />
             </>
           )}
@@ -123,6 +156,11 @@ export default function LeaderboardPage() {
         <TabsContent value="creators" className="pt-5">
           {creators.isLoading ? (
             <RowsSkeleton rows={6} />
+          ) : creators.isError ? (
+            <ErrorState
+              message="Could not load creators."
+              onRetry={() => void creators.refetch()}
+            />
           ) : !creators.data?.rows.length ? (
             <EmptyState title="No creators yet." />
           ) : (

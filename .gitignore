@@ -52,3 +52,4 @@ e2e/playwright-report/
 packages/config/deployments/localnet*.json
 *.tsbuildinfo
 packages/config/deployments/devnet.shocks.json
+refs

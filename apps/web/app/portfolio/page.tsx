@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { LooseAssets } from "@/components/wallet/loose-assets";
 import { usePortfolio } from "@/lib/api";
 import { num } from "@/lib/format";
 import { chain } from "@/lib/solana";
@@ -35,8 +36,8 @@ export default function PortfolioPage() {
   const { run, busy } = useRun();
   if (!w.address)
     return (
-      <div className="mx-auto flex max-w-[1200px] flex-col items-start gap-3 px-4 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
+      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10">
+        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Portfolio</h1>
         <p className="text-sm text-muted-foreground">
           Connect a wallet to see your positions and the fees you earn.
         </p>
@@ -57,14 +58,17 @@ export default function PortfolioPage() {
       };
     });
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
+            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Portfolio</h1>
             <SimulatedBadge />
           </div>
-          <span className="num text-4xl font-medium tracking-tight" data-testid="portfolio-total">
+          <span
+            className="num text-5xl font-bold tracking-tight md:text-[56px] md:leading-none"
+            data-testid="portfolio-total"
+          >
             <Usd value={p?.totalUsd ?? 0} digits={2} />
           </span>
           {p ? (
@@ -103,6 +107,7 @@ export default function PortfolioPage() {
           <PositionsTable rows={p.positions} />
         )}
       </Section>
+      <LooseAssets address={w.address} />
       <Section title="Your indexes">
         {!p?.created.length ? (
           <EmptyState
@@ -120,7 +125,7 @@ export default function PortfolioPage() {
                 <TableHead>Index</TableHead>
                 <TableHead className="text-right">AUM</TableHead>
                 <TableHead className="text-right">Unclaimed fees</TableHead>
-                <TableHead className="w-24" />
+                <TableHead className="w-32" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,7 +133,8 @@ export default function PortfolioPage() {
                 <TableRow key={c.pubkey}>
                   <TableCell>
                     <Link href={`/i/${c.pubkey}/manage`} className="hover:underline">
-                      {c.name} <span className="num text-xs text-muted-foreground">{c.symbol}</span>
+                      {c.name}{" "}
+                      <span className="mono text-xs text-muted-foreground">{c.symbol}</span>
                     </Link>
                   </TableCell>
                   <TableCell className="text-right">
@@ -141,11 +147,11 @@ export default function PortfolioPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={busy}
+                      disabled={busy || c.owedCreatorShares <= 0}
                       onClick={() => void claim(c.pubkey, vault.FeeKind.Creator)}
                       data-testid={`claim-creator-${c.symbol}`}
                     >
-                      Claim
+                      {c.owedCreatorShares > 0 ? "Claim" : "Nothing to claim"}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -156,10 +162,10 @@ export default function PortfolioPage() {
       </Section>
       {p?.parentRoyalties.length ? (
         <Section title="Clone royalties">
-          <ul className="divide-y rounded-lg border text-sm">
+          <ul className="divide-y rounded-2xl border text-sm">
             {p.parentRoyalties.map((r) => (
               <li key={r.index} className="flex items-center justify-between px-3 py-2">
-                <Link href={`/i/${r.index}`} className="num hover:underline">
+                <Link href={`/i/${r.index}`} className="mono hover:underline">
                   {r.symbol}
                 </Link>
                 <span className="flex items-center gap-3">
@@ -169,11 +175,11 @@ export default function PortfolioPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy}
+                    disabled={busy || r.owedShares <= 0}
                     onClick={() => void claim(r.index, vault.FeeKind.Parent, r.parent)}
                     data-testid={`claim-royalty-${r.symbol}`}
                   >
-                    Claim
+                    {r.owedShares > 0 ? "Claim" : "Nothing to claim"}
                   </Button>
                 </span>
               </li>

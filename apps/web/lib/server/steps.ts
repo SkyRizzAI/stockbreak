@@ -4,7 +4,7 @@ import "server-only";
  * Each step returns unsigned v0 transactions (fee payer = the user's wallet);
  * later steps read chain state produced by earlier ones (swap outputs, ALT).
  */
-import { getIndex, setLookupTable } from "@repo/db";
+import { getIndex } from "@repo/db";
 import {
   assertFreshPrices,
   ata,
@@ -17,6 +17,7 @@ import {
   fetchTokenBalances,
   fits,
   indexAltAddresses,
+  indexPda,
   joinIxs,
   loadAlt,
   market,
@@ -33,6 +34,8 @@ import {
 } from "@repo/sdk";
 import { type Address, createNoopSigner, type Instruction } from "@solana/kit";
 import { chain, db, requireDeployment } from "./ctx";
+import { UserError } from "./http";
+import { saveLookupTable } from "./index-row";
 
 export interface StepResult {
   step: number;
@@ -84,15 +87,36 @@ export async function joinStep(
   usdc: number,
   step: number,
   state: Record<string, unknown>,
+  /** false when re-planning mid-chain (earlier swaps already spent part of the USDC). */
+  precheck = true,
 ): Promise<StepResult> {
   const c = chain();
   const user = createNoopSigner(account);
   const st = await fetchIndex(c, index);
   const usdcM = usdcMint();
   const holdings = await Promise.all(st.assets.map((a) => ata(account, a.mint, a.tokenProgram)));
+  if (step === 0 && precheck) {
+    // Fail before the wallet is asked to sign anything (the tx would revert anyway).
+    if (!Number.isFinite(usdc) || usdc < 1) throw new UserError("Minimum join is $1 USDC");
+    if (usdc > 1_000_000) throw new UserError("Maximum join is $1,000,000 USDC");
+    if (st.paused) throw new UserError("This index is paused. Joining is disabled for now.", 409);
+    if (st.rebalanceTicket.__option === "Some")
+      throw new UserError("This index is rebalancing. Try again in a minute.", 409);
+    const usdcAta = await ata(account, usdcM, TOKEN_PROGRAM);
+    const bal = (await fetchTokenBalances(c, [usdcAta])).get(usdcAta) ?? 0n;
+    if (bal < $(usdc))
+      throw new UserError(
+        `Not enough USDC: this wallet has $${(Number(bal) / 1e6).toFixed(2)}. Get test USDC from the faucet.`,
+      );
+  }
   if (step === 0) {
     await assertFreshPrices(c, [usdcM, ...st.assets.map((a) => a.mint)]);
     const plan = await planZapIn(c, st, usdcM, $(usdc));
+    // The vault needs >= $1 of assets on the first deposit; spread + buffer eat ~1.3%.
+    if (plan.initial && usdc < 1.1)
+      throw new UserError("The first deposit into an empty index must be at least $1.10");
+    if (plan.expectedShares === 0n)
+      throw new UserError("This amount is too small to buy any shares");
     const before = await fetchTokenBalances(c, holdings);
     const groups: Instruction[][] = [];
     for (const l of plan.legs) {
@@ -126,7 +150,10 @@ export async function joinStep(
   const legs = (state.legs as { mint: string; usdcIn: string }[] | undefined) ?? [];
   const now = await fetchTokenBalances(c, holdings);
   const maxAmounts = st.assets.map((a, i) => {
-    if (a.mint === usdcM) return BigInt(legs.find((l) => l.mint === a.mint)?.usdcIn ?? "0");
+    if (a.mint === usdcM) {
+      const leg = BigInt(legs.find((l) => l.mint === a.mint)?.usdcIn ?? "0");
+      return leg < $(usdc) ? leg : $(usdc);
+    }
     const d = (now.get(holdings[i] as Address) ?? 0n) - (baseline[i] ?? 0n);
     return d > 0n ? d : 0n;
   });
@@ -292,13 +319,15 @@ export async function createStep(
     weightBps: a.weightBps,
     tokenProgram: (mints.get(a.mint as Address)?.programId ?? TOKEN_PROGRAM) as Address,
   }));
+  // Keyed by address: symbols are not unique, the index address is.
+  const uri = `${webUrl}/api/meta/${await indexPda(account, indexId)}`;
   const build = () =>
     createIndexIx({
       creator: user,
       indexId,
       name: p.name,
       symbol: p.symbol,
-      uri: `${webUrl}/api/meta/${p.symbol}`,
+      uri,
       assets,
       fees: p.fees,
       strategy: { ...p.strategy, mode: MODE[p.strategy.mode] },
@@ -333,7 +362,6 @@ export async function createStep(
     const alt = state.alt as Address;
     await waitAltActive(c, alt, Number(state.altSize ?? 1));
     const { ix, index } = await build();
-    await setLookupTable(db(), index, alt).catch(() => {});
     return {
       step,
       label: "Create the index",
@@ -344,7 +372,8 @@ export async function createStep(
   }
   // Deposit: join steps 10/11 on the new index.
   const index = state.index as Address;
-  if (state.alt) await setLookupTable(db(), index, state.alt as string).catch(() => {});
+  if (state.alt && step === 10)
+    await saveLookupTable(index, state.alt as string).catch(() => false);
   const r = await joinStep(
     account,
     index,

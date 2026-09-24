@@ -1,9 +1,9 @@
-import { getIndex } from "@repo/db";
 import type { Address } from "@solana/kit";
 import type { NextRequest } from "next/server";
-import { actionError, actionJson, b64url, preflight } from "@/lib/server/actions";
-import { db, serverEnv } from "@/lib/server/ctx";
+import { actionError, actionFail, actionJson, preflight, signState } from "@/lib/server/actions";
+import { serverEnv } from "@/lib/server/ctx";
 import { isAddress } from "@/lib/server/http";
+import { ensureIndexRow } from "@/lib/server/index-row";
 import { joinStep } from "@/lib/server/steps";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export const OPTIONS = preflight;
 
 export async function GET(_req: NextRequest, ctx: RouteContext<"/api/actions/join/[pubkey]">) {
   const { pubkey } = await ctx.params;
-  const row = isAddress(pubkey) ? await getIndex(db(), pubkey) : undefined;
+  const row = isAddress(pubkey) ? await ensureIndexRow(pubkey).catch(() => undefined) : undefined;
   if (!row) return actionError("Index not found", 404);
   const web = serverEnv().WEB_URL;
   const base = `/api/actions/join/${pubkey}`;
@@ -43,7 +43,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/actions/joi
 export async function POST(req: NextRequest, ctx: RouteContext<"/api/actions/join/[pubkey]">) {
   const { pubkey } = await ctx.params;
   const amount = Number(req.nextUrl.searchParams.get("amount"));
-  if (!isAddress(pubkey) || !(amount > 0)) return actionError("Invalid index or amount");
+  if (!isAddress(pubkey) || !Number.isFinite(amount) || amount < 1 || amount > 1_000_000)
+    return actionError("Enter an amount between $1 and $1,000,000");
   let account: string | undefined;
   try {
     account = ((await req.json()) as { account?: string }).account;
@@ -51,9 +52,11 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/actions/joi
     return actionError("Invalid body");
   }
   if (!isAddress(account)) return actionError("Invalid account");
+  if (!(await ensureIndexRow(pubkey).catch(() => undefined)))
+    return actionError("Index not found", 404);
   try {
     const r = await joinStep(account as Address, pubkey as Address, amount, 0, {});
-    const state = b64url(r.state);
+    const state = signState(r.state, `${account}.${pubkey}.${amount}`);
     const [first] = r.txs;
     const n = r.txs.length;
     if (!first) {
@@ -76,6 +79,6 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/actions/joi
       },
     });
   } catch (e) {
-    return actionError(e instanceof Error ? (e.message.split("\n")[0] ?? "Failed") : "Failed", 500);
+    return actionFail(e);
   }
 }

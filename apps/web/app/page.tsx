@@ -1,12 +1,12 @@
 "use client";
 import Link from "next/link";
-import { TickerMono } from "@/components/data/glyph";
 import { Delta, Price, toneOf } from "@/components/data/num";
 import { ErrorState, RowsSkeleton, Section, SimulatedBadge } from "@/components/data/states";
 import { IndexTable } from "@/components/index/index-table";
 import { LinkButton } from "@/components/link-button";
+import { CreatorCard } from "@/components/pages/creator-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useActivity, useIndexes, usePrices } from "@/lib/api";
+import { useActivity, useCreatorsBoard, useIndexes, usePrices } from "@/lib/api";
 import { ago, pct } from "@/lib/format";
 import type { IndexSummary } from "@/lib/types";
 
@@ -24,23 +24,47 @@ function TickerStrip() {
     return <ErrorState message="Prices are unavailable." onRetry={() => void prices.refetch()} />;
   const list = (prices.data ?? []).filter((p) => p.symbol !== "USDC");
   if (!list.length) return null;
+  // One joined strip (refs Markets): mono ticker, figure, day change; scrolls on small screens.
   return (
-    <div className="-mx-4 overflow-x-auto px-4">
-      <ul className="flex min-w-max gap-2" aria-label="Asset prices">
+    <div className="overflow-x-auto rounded-2xl border bg-surface">
+      <ul className="flex min-w-max divide-x divide-hairline" aria-label="Asset prices">
         {list.map((p) => (
-          <li key={p.symbol} className="flex items-center gap-2 rounded-lg border px-3 py-2">
-            <TickerMono symbol={p.symbol} />
-            <span className="flex flex-col leading-tight">
-              <span className="num text-xs text-muted-foreground">{p.symbol}</span>
-              <span className="flex items-baseline gap-2">
-                <Price value={p.price} className="text-sm" />
-                <Delta value={p.change24h} className="text-xs" />
-              </span>
+          <li key={p.symbol} className="flex min-w-40 flex-1 flex-col gap-1 px-4 py-3.5">
+            <span className="mono text-xs text-muted-foreground">{p.symbol}</span>
+            <span className="flex items-baseline gap-2">
+              <Price value={p.price} className="text-[17px] font-semibold" />
+              <Delta value={p.change24h} className="text-xs" />
             </span>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+function TopCreators() {
+  const q = useCreatorsBoard("all");
+  const rows = (q.data?.rows ?? []).slice(0, 3);
+  if (!q.isLoading && !rows.length) return null;
+  return (
+    <Section
+      title="Top creators"
+      action={
+        <Link href="/leaderboard" className="text-sm text-muted-foreground hover:text-foreground">
+          See all
+        </Link>
+      }
+    >
+      {q.isLoading ? (
+        <RowsSkeleton rows={1} className="[&>*]:h-36" />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-3">
+          {rows.map((c) => (
+            <CreatorCard key={c.wallet} c={c} />
+          ))}
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -51,10 +75,12 @@ function HumanVsAi({ rows }: { rows: IndexSummary[] }) {
     const m = median(list.map((r) => r.ret7d).filter((x): x is number => x !== null));
     const best = [...list].sort((a, b) => (b.ret7d ?? -1) - (a.ret7d ?? -1))[0];
     return (
-      <div className="flex flex-col gap-1 rounded-lg border p-4">
-        <span className="text-xs text-muted-foreground">{label} · median 7d</span>
-        <span className={`num text-2xl ${toneOf(m, 0.00005)}`}>{pct(m)}</span>
-        <span className="text-xs text-muted-foreground">
+      <div className="flex flex-col gap-2 p-5">
+        <span className="text-sm font-semibold">{label} · median 7d</span>
+        <span className={`num text-[40px] leading-none font-bold ${toneOf(m, 0.00005)}`}>
+          {pct(m)}
+        </span>
+        <span className="text-[13px] text-muted-foreground">
           {list.length} indexes
           {best ? (
             <>
@@ -69,7 +95,7 @@ function HumanVsAi({ rows }: { rows: IndexSummary[] }) {
     );
   };
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 divide-x divide-hairline rounded-2xl border bg-surface">
       {cell("Human", human)}
       {cell("AI", ai)}
     </div>
@@ -85,11 +111,11 @@ export default function Home() {
     .sort((a, b) => (b.ret7d ?? -1) - (a.ret7d ?? -1))
     .slice(0, 4);
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Markets</h1>
+            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Markets</h1>
             <SimulatedBadge />
           </div>
           <p className="text-sm text-muted-foreground">
@@ -116,13 +142,15 @@ export default function Home() {
         ) : list.isError ? (
           <ErrorState message="Could not load indexes." onRetry={() => void list.refetch()} />
         ) : rows.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+          <p className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
             No indexes yet. Create the first one.
           </p>
         ) : (
           <IndexTable rows={rows.slice(0, 6)} />
         )}
       </Section>
+
+      <TopCreators />
 
       <div className="grid gap-8 lg:grid-cols-2">
         <Section title="Trending clones">
@@ -131,7 +159,7 @@ export default function Home() {
           ) : clones.length ? (
             <IndexTable rows={clones} compact />
           ) : (
-            <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+            <p className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
               No clones yet. Open any index and press Clone.
             </p>
           )}
@@ -156,7 +184,7 @@ export default function Home() {
             ) : (act.data ?? []).length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing yet.</p>
             ) : (
-              <ul className="divide-y rounded-lg border text-sm">
+              <ul className="divide-y rounded-2xl border text-sm">
                 {(act.data ?? []).slice(0, 6).map((a) => (
                   <li
                     key={`${a.signature}-${a.type}`}

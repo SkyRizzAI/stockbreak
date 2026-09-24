@@ -89,8 +89,10 @@ function collectText(e: unknown, depth = 0): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) {
     const ctx = (e as Error & { context?: unknown }).context;
+    const logs = (e as Error & { logs?: unknown }).logs;
     return [
       e.message,
+      Array.isArray(logs) ? logs.join("\n") : "",
       collectText(ctx, depth + 1),
       collectText((e as Error & { cause?: unknown }).cause, depth + 1),
     ].join("\n");
@@ -117,18 +119,12 @@ export function parseFailure(e: unknown, logs?: readonly string[]): ProgramFailu
         ? "index_vault"
         : "other";
   let name = named?.[1];
-  if (!name && failed) {
+  if (!name && failed && program !== "other") {
     const code = Number.parseInt(failed[2] as string, 16) - 6000;
     name = (program === "mock_market" ? MARKET_ERRORS : VAULT_ERRORS)[code];
   }
-  if (!name) {
-    const custom = /"Custom":\s*(\d+)|custom program error: 0x([0-9a-f]+)/i.exec(text);
-    if (custom) {
-      const code =
-        (custom[1] ? Number(custom[1]) : Number.parseInt(custom[2] as string, 16)) - 6000;
-      name = VAULT_ERRORS[code];
-    }
-  }
+  // A bare `{"Custom":N}` (no logs, no program id) is ambiguous: both programs
+  // number their errors from 6000, so never guess which one failed.
   if (!name) return null;
   const message =
     (program === "mock_market" ? MARKET_MESSAGES[name] : undefined) ??
@@ -138,16 +134,61 @@ export function parseFailure(e: unknown, logs?: readonly string[]): ProgramFailu
   return { program, name, message };
 }
 
-/** One short sentence for toasts / MCP responses. */
 /** An error whose message is already written for end users (thrown by SDK pre-checks). */
 export class UserFacingError extends Error {
   override name = "UserFacingError";
 }
 
+/** A transaction that landed but failed on chain; `logs` come from getTransaction. */
+export class TxFailedError extends Error {
+  override name = "TxFailedError";
+  constructor(
+    message: string,
+    readonly signature: string,
+    readonly logs: readonly string[],
+  ) {
+    super(message);
+  }
+}
+
+/** How to recover from a multi-transaction flow that stopped halfway. */
+export type ZapRecovery = "finish-join" | "swap-to-usdc";
+
+/**
+ * A multi-transaction flow (zap in / zap out) failed after earlier transactions
+ * already landed. `message` explains what happened in plain words; `completed`
+ * lists the signatures that did land; `held` are the asset amounts now sitting
+ * in the user's wallet.
+ */
+export class PartialZapError extends UserFacingError {
+  override name = "PartialZapError";
+  constructor(
+    message: string,
+    readonly stage: "join" | "swap" | "redeem",
+    readonly completed: string[],
+    readonly totalSteps: number,
+    readonly recovery: ZapRecovery[],
+    readonly held: { mint: string; amount: bigint }[],
+    readonly reason: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+  }
+}
+
+/** True when the wallet went away (disconnect / account switch) mid-flow. */
+export function isWalletGone(e: unknown): boolean {
+  return /"__code":\s*89000\d\d|no wallet connected|no signing wallet|wallet not connected|wallet (was )?disconnected|WalletNotConnected|account (is )?not available/i.test(
+    collectText(e),
+  );
+}
+
+/** One short sentence for toasts / MCP responses. */
 export function humanizeError(e: unknown, logs?: readonly string[]): string {
   if (e instanceof UserFacingError) return e.message;
   const f = parseFailure(e, logs);
   if (f) return f.message;
+  if (isWalletGone(e)) return "Wallet disconnected. Reconnect and try again.";
   const text = collectText(e);
   if (/insufficient (funds|lamports)|0x1\b/i.test(text))
     return "Not enough SOL or tokens to complete this transaction.";

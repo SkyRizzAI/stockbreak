@@ -1,8 +1,9 @@
-import { getIndex, setIndexMeta } from "@repo/db";
+import { setIndexMeta } from "@repo/db";
 import * as z from "zod";
 import { verifyWallet } from "@/lib/server/auth";
 import { db } from "@/lib/server/ctx";
 import { fail, guard, isAddress } from "@/lib/server/http";
+import { ensureIndexRow } from "@/lib/server/index-row";
 
 const Body = z.object({
   description: z.string().max(280).nullable(),
@@ -18,7 +19,8 @@ export async function POST(req: Request, ctx: RouteContext<"/api/indexes/[pubkey
   return guard(async () => {
     const b = Body.safeParse(await req.json());
     if (!b.success) return fail(400, "Invalid request");
-    const row = await getIndex(db(), pubkey);
+    // Right after create the worker may not have indexed it yet: sync from chain.
+    const row = await ensureIndexRow(pubkey);
     if (!row) return fail(404, "Index not found");
     if (row.creator !== b.data.wallet) return fail(403, "Only the creator can edit this index");
     if (!(await verifyWallet(b.data.wallet, "index-meta", b.data.nonce, b.data.signature)))

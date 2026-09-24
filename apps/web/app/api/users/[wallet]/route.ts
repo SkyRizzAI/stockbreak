@@ -15,6 +15,17 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/users/[walle
   return guard(() => profile(wallet, isAddress(viewer) ? viewer : undefined));
 }
 
+const RESERVED = new Set([
+  "admin",
+  "stocklana",
+  "keeper",
+  "system",
+  "support",
+  "official",
+  "moderator",
+  "platform",
+]);
+
 const Body = z.object({
   handle: z
     .string()
@@ -33,9 +44,17 @@ export async function POST(req: Request, ctx: RouteContext<"/api/users/[wallet]"
     if (!b.success) return fail(400, b.error.issues[0]?.message ?? "Invalid request");
     if (!(await verifyWallet(wallet, "profile", b.data.nonce, b.data.signature)))
       return fail(401, "Signature check failed");
+    if (b.data.handle && RESERVED.has(b.data.handle)) return fail(409, "That handle is reserved");
     if (b.data.handle && (await handleTaken(db(), b.data.handle, wallet)))
       return fail(409, "Handle is taken");
     await ensureUser(db(), wallet);
-    return updateUser(db(), wallet, { handle: b.data.handle, bio: b.data.bio });
+    try {
+      return await updateUser(db(), wallet, { handle: b.data.handle, bio: b.data.bio });
+    } catch (e) {
+      // Two wallets racing for one handle: the unique index decides.
+      if (/unique|duplicate/i.test(String((e as { message?: string }).message)))
+        return fail(409, "Handle is taken");
+      throw e;
+    }
   });
 }

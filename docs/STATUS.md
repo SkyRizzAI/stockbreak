@@ -92,3 +92,31 @@ Legenda: `[ ]` belum · `[~]` berjalan · `[x]` selesai · `BLOCKED(eksternal): 
 - `deployments/devnet.json` & perubahan kode belum di-commit (git dikelola user).
 - 2026-09-24: contract: feed sosial (D033) — tabel `auth_sessions`, `posts`, `post_likes`, `post_comments` (migrasi drizzle 0001, diterapkan ke app/app_test/app_devnet; `bun run dev` kini menjalankan migrasi otomatis). Halaman `/feed` (Following/All), Discussion di halaman index, Posts di profil, like, komentar, hapus. Anti-spam: sesi sign-in 24 jam (cookie httpOnly, cek Origin), wajib aktivitas on-chain, batas laju & jeda, batas panjang/link, deteksi duplikat & karakter berulang. Seed menambah konten sosial demo (`seed -- --social-only`). e2e `social.spec.ts` 4/4, pages + feed hijau.
 - 2026-09-24: fix wizard (laporan user): slider Base UI mengirim angka tunggal pada input mouse sehingga bobot jatuh ke 0 dan macet; slider strategi/fee diam-diam kembali ke default. Kini `sliderValue` menerima angka/array untuk 8 slider; mengubah bobot meredistribusi aset tak terkunci agar total tetap 100% (kunci dihormati); input bobot/target (wizard & Manage) memakai `DecimalInput` (bisa mengetik "12." / kosong). Test regresi `e2e/tests/wizard.spec.ts`; `bun run verify` ALL GREEN (72 e2e).
+- 2026-09-24: redesign UI mengikuti `refs/Stocklana.html` (D034): token hijau (dark default + light), Manrope/IBM Plex Mono, mint hanya untuk aksi utama/logo/return positif, glass di top bar + panel Join/Redeem, index mark 4 hijau, strip ticker bersambung, segmented control, underline tabs, tabel hairline, kartu Top 3 & chart ala referensi, OG image hijau.
+- 2026-09-24: contract: kartu index untuk feed (D035) — kolom `posts.card_variant` (migrasi 0002), `/api/benchmark`, komponen `IndexCard` dengan 3 gaya (Mark/Tokens/Chart) berisi koleksi token, return 30d, TVL, drawdown vs SPYx; menu Share → "Post to feed as a card" dengan pemilih gaya + preview; kartu Top creators di Home; seed menampilkan ketiga gaya. Gaya gradien/ilustrasi 3D dari contoh client sengaja tidak ditiru (§8.2, D034). e2e social 6/6.
+- 2026-09-24: QA skenario A16 (D036), berdasarkan permintaan user "buat banyak scenario ... biar tahu kecacatan flow".
+  - Tiga audit alur menghasilkan 70 temuan, dan probe API 58 kasus tepi menemukan 11 jawaban salah. Hampir semuanya diperbaiki (lihat `docs/analysis/A16-qa-scenarios.md`).
+  - Yang terpenting:
+    - pemulihan join/redeem parsial (Finish join / Swap to USDC / Loose assets);
+    - create+deposit tidak lagi membuat index ganda;
+    - setoran pertama minimal $1,10;
+    - pengecekan paused/rebalance sebelum swap;
+    - error mock_market tidak lagi salah label;
+    - ALT index besar tersimpan;
+    - /sign bisa dilanjutkan dengan progres di server dan status yang tidak bisa dipalsukan;
+    - state Blink ditandatangani;
+    - indexer tidak kehilangan tx atau menggandakan cost basis;
+    - pagination feed keyset;
+    - sesi sosial berakhir saat disconnect;
+    - validasi Manage (fee/slippage, replace pending, banner perubahan terjadwal).
+  - `contract:` MCP `get_intent_status` menambah `result.index` (aditif); `/api/feed` & `/api/posts` memakai `cursor`. Skema DB dan program tidak berubah.
+  - Tes baru: `e2e/tests/scenarios-api.spec.ts` (8), `e2e/tests/scenarios-ui.spec.ts` (7), `apps/worker/test/positions.test.ts`, +3 test error SDK (SDK 59 hijau).
+  - Belum: C8 (butuh perubahan program).
+- 2026-09-24: QA A16 selesai. Putaran eksekusi e2e menemukan 5 cacat UX tambahan (E1–E5), semuanya diperbaiki:
+  - feed All dibanjiri event otomatis → event dibatasi per halaman + dilipat;
+  - label "Keeper" keliru;
+  - Blink 500 untuk alamat bukan index;
+  - Retry yang tak berguna;
+  - Following kosong tanpa jalan ke All.
+
+  `bun run verify` ALL GREEN: 38 test program, SDK 59, MCP 10, worker 7, **89 e2e**.

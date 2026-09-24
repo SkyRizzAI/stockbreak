@@ -1,6 +1,6 @@
 "use client";
 /** Transaction runner: toasts with progress + explorer links, human errors, cache refresh. */
-import { humanizeError } from "@repo/sdk";
+import { humanizeError, PartialZapError } from "@repo/sdk";
 import {
   getBase64EncodedWireTransaction,
   getBase64Encoder,
@@ -32,6 +32,40 @@ function Explorer({ sig }: { sig: string }) {
   );
 }
 
+/** Human label for a zap progress step. */
+export function stepLabel(step: string): string {
+  switch (step) {
+    case "swap":
+      return "Swapping";
+    case "join":
+      return "Joining";
+    case "prepare":
+      return "Preparing accounts";
+    case "redeem":
+      return "Redeeming";
+    case "wait":
+      return "Waiting for fresh prices";
+    default:
+      return step;
+  }
+}
+
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface RunOptions {
+  /**
+   * Recovery offered when a multi-transaction flow stopped halfway: the first
+   * action is the main one, the optional second is shown as the alternative.
+   */
+  recover?: (e: PartialZapError) => ToastAction[];
+}
+
+/** Errors stay long enough to read; partial results stay until dismissed. */
+const ERROR_MS = 12_000;
+
 export function useRun() {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
@@ -41,6 +75,7 @@ export function useRun() {
       label: string,
       fn: (onProgress: (p: Progress) => void) => Promise<T>,
       success?: (r: T) => string,
+      opts: RunOptions = {},
     ): Promise<T | null> => {
       setBusy(true);
       setProgress(null);
@@ -48,7 +83,7 @@ export function useRun() {
       try {
         const r = await fn((p) => {
           setProgress(p);
-          toast.loading(`${label} · ${p.done}/${p.total}`, {
+          toast.loading(`${label} · ${stepLabel(p.step)} ${p.done}/${p.total}`, {
             id,
             description: p.signature ? <Explorer sig={p.signature} /> : undefined,
           });
@@ -60,16 +95,42 @@ export function useRun() {
           id,
           description: sig ? <Explorer sig={sig} /> : undefined,
         });
-        await qc.invalidateQueries();
-        setTimeout(() => void qc.invalidateQueries(), 4000);
         return r;
       } catch (e) {
         console.error(e);
-        toast.error(humanizeError(e), { id, description: label });
+        if (e instanceof PartialZapError) {
+          const [main, alt] = opts.recover?.(e) ?? [];
+          const last = e.completed.at(-1);
+          toast.warning(e.message, {
+            id,
+            duration: Number.POSITIVE_INFINITY,
+            closeButton: true,
+            description: (
+              <span className="flex flex-col gap-1">
+                <span>
+                  {e.completed.length} of {e.totalSteps} steps completed. {e.reason}
+                </span>
+                {last ? <Explorer sig={last} /> : null}
+              </span>
+            ),
+            action: main,
+            cancel: alt,
+          });
+        } else {
+          toast.error(humanizeError(e), {
+            id,
+            description: label,
+            duration: ERROR_MS,
+            closeButton: true,
+          });
+        }
         return null;
       } finally {
         setBusy(false);
         setProgress(null);
+        // Refresh balances on success and on failure (a failed flow may have moved funds).
+        void qc.invalidateQueries();
+        setTimeout(() => void qc.invalidateQueries(), 4000);
       }
     },
     [qc],

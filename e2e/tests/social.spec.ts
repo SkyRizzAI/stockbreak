@@ -56,8 +56,10 @@ test("post, like, comment, anti-spam, delete", async ({ page }) => {
   await expect(page.getByTestId("post-error")).toContainText(/Slow down|already posted/);
 
   // Like / unlike (optimistic, persisted).
+  const liked = page.waitForResponse((r) => r.url().includes("/like") && r.ok());
   await card.getByTestId("like-button").click();
   await expect(card.getByTestId("like-count")).toHaveText("1");
+  await liked; // the like is persisted before reloading
   await page.reload();
   const again = page.getByTestId("post-card").filter({ hasText: body });
   await expect(again.getByTestId("like-button")).toHaveAttribute("aria-pressed", "true");
@@ -99,4 +101,47 @@ test("Following tab shows followed creators and seeded posts render", async ({ p
   await page.goto("/feed");
   await page.getByTestId("tab-following").click();
   await expect(page.getByTestId("feed-list")).toContainText("@alice", { timeout: 30_000 });
+});
+
+test("share an index to the feed as a card, in a chosen style", async ({ page }) => {
+  await page.goto("/");
+  await connectDevWallet(page);
+  await page.goto(await firstIndexHref(page, "MEGA"));
+  await page.getByTestId("join-amount").fill("15");
+  await page.getByTestId("join-submit").click();
+  await expectRun(page, /Joined MEGA/);
+
+  await page.getByRole("button", { name: "Share" }).click();
+  await page.getByTestId("share-to-feed").click();
+  await expect(page).toHaveURL(/\/feed\?share=/);
+  const preview = page.getByTestId("share-preview");
+  await expect(preview.getByTestId("index-card")).toHaveAttribute("data-variant", "mark");
+  await page.getByTestId("card-variant-chart").click();
+  await expect(preview.getByTestId("index-card")).toHaveAttribute("data-variant", "chart");
+  await expect(preview).toContainText("Steady Megacaps");
+  await expect(preview).toContainText("SPYx drawdown");
+
+  const body = `Card share ${Date.now()}`;
+  await expect
+    .poll(
+      async () => {
+        await page.getByTestId("post-input").fill(body);
+        await page.getByTestId("post-submit").click();
+        await page.waitForTimeout(1500);
+        const err = page.getByTestId("post-error");
+        return (await err.count()) ? ((await err.textContent()) ?? "") : "";
+      },
+      { timeout: 60_000, intervals: [3_000] },
+    )
+    .not.toContain("Join or create an index first");
+  await page.getByTestId("tab-all").click();
+  const post = page.getByTestId("post-card").filter({ hasText: body });
+  await expect(post.getByTestId("index-card")).toHaveAttribute("data-variant", "chart");
+  await expect(post.getByTestId("index-card")).toContainText("MEGA");
+});
+
+test("home shows top creator cards", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("creator-card").first()).toBeVisible();
+  await expect(page.getByTestId("creator-card").first()).toContainText("AUM");
 });

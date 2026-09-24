@@ -1,43 +1,33 @@
 "use client";
 /**
- * Light/dark theme without any <script>: the default follows the system via CSS
- * (prefers-color-scheme); a manual choice is stored and applied as `.light`/`.dark`.
+ * Dark green is the default (refs/Stocklana.html). A manual choice of the light
+ * variant is stored and applied as `.light` on <html>; no inline <script>.
  */
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 const KEY = "stocklana:theme";
-const media = () => window.matchMedia("(prefers-color-scheme: dark)");
 
-function apply(t: "light" | "dark" | null) {
+function apply(t: "light" | "dark") {
   const el = document.documentElement;
-  el.classList.toggle("dark", t === "dark");
   el.classList.toggle("light", t === "light");
+  el.classList.remove("dark");
 }
 
 function read(): "light" | "dark" {
-  const el = document.documentElement;
-  if (el.classList.contains("dark")) return "dark";
-  if (el.classList.contains("light")) return "light";
-  return media().matches ? "dark" : "light";
+  return document.documentElement.classList.contains("light") ? "light" : "dark";
 }
 
 function subscribe(cb: () => void) {
   const mo = new MutationObserver(cb);
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-  const mq = media();
-  mq.addEventListener("change", cb);
-  return () => {
-    mo.disconnect();
-    mq.removeEventListener("change", cb);
-  };
+  return () => mo.disconnect();
 }
 
 /** Apply the stored preference once on mount (mounted in Providers). */
 export function useThemeInit() {
   useEffect(() => {
     try {
-      const t = localStorage.getItem(KEY);
-      if (t === "light" || t === "dark") apply(t);
+      if (localStorage.getItem(KEY) === "light") apply("light");
     } catch {
       // storage unavailable
     }
@@ -45,7 +35,7 @@ export function useThemeInit() {
 }
 
 export function useTheme() {
-  const resolvedTheme = useSyncExternalStore(subscribe, read, () => "light" as const);
+  const resolvedTheme = useSyncExternalStore(subscribe, read, () => "dark" as const);
   const setTheme = useCallback((t: "light" | "dark") => {
     try {
       localStorage.setItem(KEY, t);

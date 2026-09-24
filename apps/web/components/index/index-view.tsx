@@ -1,5 +1,5 @@
 "use client";
-import { Copy, Download, Link2, Share2 } from "lucide-react";
+import { Copy, Download, Link2, MessagesSquare, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -48,6 +48,7 @@ import { txUrl } from "@/lib/solana";
 import type { IndexDetail } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
 import { IndexTags } from "./index-table";
+import { PendingBanner } from "./pending-update";
 import { PerfChart } from "./perf-chart";
 import { TradePanel } from "./trade-panel";
 
@@ -73,6 +74,12 @@ function ShareMenu({ d }: { d: IndexDetail }) {
         Share
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem
+          render={<Link href={`/feed?share=${d.pubkey}`} data-testid="share-to-feed" />}
+        >
+          <MessagesSquare />
+          Post to feed as a card
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => copy(link, "Link copied")}>
           <Link2 />
           Copy link
@@ -130,7 +137,7 @@ function Allocation({ d }: { d: IndexDetail }) {
                   <span className="flex items-center gap-2">
                     <TickerMono symbol={a.symbol} />
                     <span className="flex flex-col leading-tight">
-                      <span className="num text-sm">{a.symbol}</span>
+                      <span className="mono text-sm">{a.symbol}</span>
                       <span className="text-xs text-muted-foreground">
                         {a.name}
                         {a.kind === "PreIpo" ? " · pre-IPO" : ""}
@@ -174,7 +181,7 @@ function Activity({ pubkey }: { pubkey: string }) {
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No activity yet.</p>
       ) : (
-        <ul className="divide-y rounded-lg border text-sm">
+        <ul className="divide-y rounded-2xl border text-sm">
           {rows.slice(0, 20).map((a) => (
             <li
               key={`${a.signature}-${a.type}-${a.summary}`}
@@ -212,7 +219,7 @@ function Holders({ pubkey }: { pubkey: string }) {
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No holders yet.</p>
       ) : (
-        <ul className="divide-y rounded-lg border text-sm">
+        <ul className="divide-y rounded-2xl border text-sm">
           {rows.slice(0, 10).map((h) => (
             <li key={h.wallet} className="flex items-center justify-between px-3 py-2">
               <UserLink wallet={h.wallet} handle={h.handle} />
@@ -264,7 +271,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
   const [bench, setBench] = useState(true);
   if (q.isLoading)
     return (
-      <div className="mx-auto grid max-w-[1200px] gap-6 px-4 py-6 lg:grid-cols-[1fr_360px]">
+      <div className="mx-auto grid max-w-[1280px] gap-6 px-4 py-8 md:px-8 lg:grid-cols-[1fr_360px]">
         <div className="flex flex-col gap-4">
           <Skeleton className="h-16 w-2/3" />
           <Skeleton className="h-72" />
@@ -278,7 +285,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
     (!q.isError && !q.data)
   )
     return (
-      <div className="mx-auto max-w-[1200px] px-4 py-6">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <NotFoundState
           title="Index not found"
           detail="There is no index at this address on this network. Check the link, or browse the indexes that exist."
@@ -287,7 +294,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[1200px] px-4 py-6">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <ErrorState
           message={q.error?.message ?? "Index not found."}
           onRetry={() => void q.refetch()}
@@ -306,7 +313,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
       ]
     : [];
   return (
-    <div className="mx-auto grid w-full max-w-[1200px] gap-8 px-4 py-6 lg:grid-cols-[1fr_360px]">
+    <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-4 py-8 md:px-8 lg:grid-cols-[1fr_360px]">
       <div className="flex min-w-0 flex-col gap-8">
         <header className="flex flex-col gap-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -317,9 +324,9 @@ export function IndexView({ pubkey }: { pubkey: string }) {
                 size={44}
               />
               <div className="flex min-w-0 flex-col gap-1">
-                <h1 className="flex flex-wrap items-baseline gap-2 text-xl font-semibold tracking-tight">
+                <h1 className="flex flex-wrap items-baseline gap-2 text-2xl font-bold tracking-tight md:text-3xl">
                   <span className="truncate">{d.name}</span>
-                  <span className="num text-sm text-muted-foreground">{d.symbol}</span>
+                  <span className="mono text-sm font-normal text-muted-foreground">{d.symbol}</span>
                 </h1>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <span>
@@ -351,7 +358,10 @@ export function IndexView({ pubkey }: { pubkey: string }) {
           <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
             <div className="flex flex-col">
               <span className="text-xs text-muted-foreground">Share price</span>
-              <span className="num text-4xl font-medium tracking-tight" data-testid="share-price">
+              <span
+                className="num text-5xl font-bold tracking-tight md:text-[56px] md:leading-none"
+                data-testid="share-price"
+              >
                 ${d.sharePriceLive.toFixed(4)}
               </span>
             </div>
@@ -379,6 +389,8 @@ export function IndexView({ pubkey }: { pubkey: string }) {
           ) : null}
         </header>
 
+        <PendingBanner d={d} />
+
         <PerfChart
           pubkey={d.pubkey}
           range={range}
@@ -386,6 +398,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
           showBench={bench}
           onBench={setBench}
           live={d.sharePriceLive}
+          symbol={d.symbol}
         />
 
         <Allocation d={d} />
@@ -460,7 +473,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
         <div className="grid gap-8 md:grid-cols-2">
           <Section title="Managers">
             {d.managers.length ? (
-              <ul className="divide-y rounded-lg border text-sm">
+              <ul className="divide-y rounded-2xl border text-sm">
                 {d.managers.map((m) => (
                   <li key={m.wallet} className="flex items-center justify-between px-3 py-2">
                     <UserLink wallet={m.wallet} handle={m.handle} isAgent={m.isAgent} />
@@ -470,7 +483,9 @@ export function IndexView({ pubkey }: { pubkey: string }) {
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No managers. Only the creator and the keeper can rebalance.
+                {d.strategy.allowKeeper
+                  ? "No managers. Only the creator and the keeper can rebalance."
+                  : "No managers. Only the creator can rebalance."}
               </p>
             )}
           </Section>
@@ -479,7 +494,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
 
         {d.children.length ? (
           <Section title="Clones & followers">
-            <ul className="divide-y rounded-lg border text-sm">
+            <ul className="divide-y rounded-2xl border text-sm">
               {d.children.map((c) => (
                 <li key={c.pubkey}>
                   <Link
@@ -487,7 +502,8 @@ export function IndexView({ pubkey }: { pubkey: string }) {
                     className="flex items-center justify-between px-3 py-2 hover:bg-muted/50"
                   >
                     <span>
-                      {c.name} <span className="num text-xs text-muted-foreground">{c.symbol}</span>
+                      {c.name}{" "}
+                      <span className="mono text-xs text-muted-foreground">{c.symbol}</span>
                     </span>
                     <Tag>{c.followsParent ? "Follows" : "Clone"}</Tag>
                   </Link>
@@ -509,10 +525,10 @@ export function IndexView({ pubkey }: { pubkey: string }) {
       </div>
 
       <aside className="hidden lg:block">
-        <div className="sticky top-20 rounded-xl border p-4">{panel}</div>
+        <div className="glass-panel sticky top-24 rounded-2xl border p-6">{panel}</div>
       </aside>
 
-      <div className="fixed inset-x-0 bottom-14 z-30 border-t bg-background/95 p-3 backdrop-blur-sm lg:hidden">
+      <div className="glass-bar fixed inset-x-0 bottom-14 z-30 border-t p-3 lg:hidden">
         <Drawer>
           <DrawerTrigger
             render={<Button size="lg" className="h-11 w-full" data-testid="open-trade" />}
@@ -522,7 +538,8 @@ export function IndexView({ pubkey }: { pubkey: string }) {
           <DrawerContent>
             <DrawerHeader>
               <DrawerTitle>
-                {d.name} <span className="num text-sm text-muted-foreground">{d.symbol}</span>
+                {d.name}{" "}
+                <span className="mono text-sm font-normal text-muted-foreground">{d.symbol}</span>
               </DrawerTitle>
             </DrawerHeader>
             <div className="max-h-[75vh] overflow-y-auto px-4 pb-6">{panel}</div>

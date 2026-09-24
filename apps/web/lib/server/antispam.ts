@@ -42,7 +42,7 @@ export async function checkWriter(
 ): Promise<string | null> {
   const d = db();
   if (!(await hasOnchainActivity(d, wallet)))
-    return "Join or create an index first — posting needs on-chain activity.";
+    return "Join or create an index first — posting needs on-chain activity. Just did? Give it a few seconds to show up.";
   const L = LIMITS[kind];
   const now = Date.now();
   const s = await (kind === "post" ? postStats : commentStats)(d, wallet, {

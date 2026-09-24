@@ -1,6 +1,6 @@
-import { getIndex } from "@repo/db";
 import { db, serverEnv } from "@/lib/server/ctx";
-import { fail, guard, ok } from "@/lib/server/http";
+import { fail, guard, isAddress, ok } from "@/lib/server/http";
+import { ensureIndexRow } from "@/lib/server/index-row";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +8,9 @@ export const dynamic = "force-dynamic";
 export async function GET(_req: Request, ctx: RouteContext<"/api/meta/[pubkey]">) {
   const { pubkey } = await ctx.params;
   return guard(async () => {
+    // Address first (synced from chain if the worker lags); symbol URIs from older indexes.
     const row =
-      (await getIndex(db(), pubkey)) ??
+      (isAddress(pubkey) ? await ensureIndexRow(pubkey).catch(() => undefined) : undefined) ??
       (await db().query.indexes.findFirst({ where: (t, { eq }) => eq(t.symbol, pubkey) }));
     if (!row) return fail(404, "Index not found");
     const web = serverEnv().WEB_URL;

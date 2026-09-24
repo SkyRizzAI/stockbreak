@@ -51,7 +51,7 @@ export async function finishWizard(
   }
   await page.getByTestId("index-name").fill(opts.name);
   await page.getByTestId("index-symbol").fill(opts.symbol);
-  if (opts.deposit) await page.getByTestId("index-deposit").fill(opts.deposit);
+  if (opts.deposit !== undefined) await page.getByTestId("index-deposit").fill(opts.deposit);
   if (opts.follow) await page.getByRole("switch", { name: /follow parent/i }).click();
   await page.getByTestId("wizard-create").click();
   await expect(page).toHaveURL(/\/i\/[1-9A-HJ-NP-Za-km-z]{32,44}$/, { timeout: 180_000 });

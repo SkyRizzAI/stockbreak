@@ -12,6 +12,7 @@ import {
   createIndexFlow,
   fetchIndex,
   fetchTokenBalances,
+  indexPda,
   nextIndexId,
   proposeUpdateIx,
   rebalanceIxs,
@@ -152,19 +153,28 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
       const a = agentOf(c);
       if (spec.depositUsdc) checkUsdcLimit(c, spec.depositUsdc);
       const p = toCreateParams(c, spec);
+      const indexId = await nextIndexId(c, a.address);
       const r = await createIndexFlow(c, {
         creator: a,
-        indexId: await nextIndexId(c, a.address),
+        indexId,
         name: p.name,
         symbol: p.symbol,
-        uri: `${c.env.WEB_URL}/api/meta/${p.symbol}`,
+        // Keyed by address: symbols are not unique.
+        uri: `${c.env.WEB_URL}/api/meta/${await indexPda(a.address, indexId)}`,
         assets: p.assets.map((x) => ({ mint: x.mint, weightBps: x.weightBps })),
         fees: p.fees,
         strategy: { ...p.strategy, mode: MODE[p.strategy.mode] },
         parent: null,
         followsParent: false,
       });
-      if (await waitIndexed(c, r.index)) {
+      // The metadata route syncs the row from chain when the worker has not indexed it yet.
+      if (
+        (await waitIndexed(c, r.index, 5_000)) ||
+        (await c.web(`/api/meta/${r.index}`).then(
+          () => true,
+          () => false,
+        ))
+      ) {
         if (r.lookupTable) await setLookupTable(c.db, r.index, r.lookupTable);
         if (p.description) await setIndexMeta(c.db, r.index, { description: p.description });
       }

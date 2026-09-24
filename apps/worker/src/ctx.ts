@@ -29,6 +29,7 @@ export async function createWorkerCtx(): Promise<WorkerCtx> {
     const d = deployment();
     return Object.entries(d.mints).find(([, m]) => m === mint)?.[0];
   };
+  const secrets = secretValues(env);
   return {
     ...chain,
     env,
@@ -37,8 +38,28 @@ export async function createWorkerCtx(): Promise<WorkerCtx> {
     keeper: await loadSigner(env.KEEPER_KEYPAIR_PATH),
     deployment,
     symbolOf,
-    log: (scope, msg) => console.log(`${new Date().toISOString().slice(11, 19)} [${scope}] ${msg}`),
+    log: (scope, msg) =>
+      console.log(`${new Date().toISOString().slice(11, 19)} [${scope}] ${redact(msg, secrets)}`),
   };
+}
+
+/** Env values that must never reach logs (API keys, tokens, credentials). */
+function secretValues(env: WorkerEnv): string[] {
+  return Object.entries(env)
+    .filter(
+      ([k, v]) =>
+        /KEY|TOKEN|SECRET|PASSWORD/i.test(k) && !/PATH$/i.test(k) && typeof v === "string",
+    )
+    .map(([, v]) => String(v))
+    .filter((v) => v.length >= 8);
+}
+
+/** Strip API keys from URLs (`?api-key=`, `&token=`, …), URL passwords and known secret values. */
+export function redact(msg: string, secrets: string[] = []): string {
+  let out = msg.replace(/([?&](?:api[-_]?key|apikey|key|token|access_token)=)[^&\s"']+/gi, "$1***");
+  out = out.replace(/(:\/\/[^:/\s@]+:)[^@\s]+@/g, "$1***@");
+  for (const s of secrets) out = out.split(s).join("***");
+  return out;
 }
 
 export function assetMeta(symbol: string | undefined) {

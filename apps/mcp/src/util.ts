@@ -66,9 +66,15 @@ export async function resolveIndex(c: McpCtx, ref: string): Promise<IndexLite> {
     const d = await c.web<IndexLite>(`/api/indexes/${q}`);
     return { pubkey: d.pubkey, name: d.name, symbol: d.symbol };
   }
-  const { items } = await c.web<{ items: IndexLite[] }>(
-    `/api/indexes?q=${encodeURIComponent(q)}&limit=50`,
-  );
+  // Walk every page of matches: a low-AUM index with a common symbol may sort late.
+  const items: IndexLite[] = [];
+  for (let page = 0; page < 20; page++) {
+    const r = await c.web<{ items: IndexLite[]; total: number }>(
+      `/api/indexes?q=${encodeURIComponent(q)}&limit=100&page=${page}`,
+    );
+    items.push(...r.items);
+    if (items.length >= r.total || r.items.length === 0) break;
+  }
   const exact = items.filter((i) => i.symbol.toLowerCase() === q.toLowerCase());
   if (exact.length === 1) return exact[0] as IndexLite;
   if (exact.length > 1)

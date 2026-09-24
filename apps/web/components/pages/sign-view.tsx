@@ -24,6 +24,9 @@ interface Intent {
   status: string;
   signatures: string[];
   expiresAt: string;
+  /** Some steps already landed: signing continues from there. */
+  resumed?: boolean;
+  result?: { index: string } | null;
 }
 
 interface Step {
@@ -99,7 +102,7 @@ export function SignView() {
   const [error, setError] = useState<string | null>(null);
   if (!id)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-6">
+      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
         <NotFoundState
           title="No request to sign"
           detail="This page opens a transaction request prepared by an AI agent. Ask the agent for its sign link."
@@ -110,13 +113,13 @@ export function SignView() {
     );
   if (q.isLoading)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-6">
+      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
         <Skeleton className="h-64" />
       </div>
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-6">
+      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
         <NotFoundState
           title="Request not found"
           detail="This sign link is invalid or was removed. Ask your agent to prepare the request again."
@@ -128,19 +131,20 @@ export function SignView() {
   const it = q.data;
   const d = describe(it);
   const wrongWallet =
-    !!it.wallet && !!w.address && it.wallet !== w.address && it.status === "pending";
+    !!it.wallet && !!w.address && it.wallet !== w.address && it.status !== "executed";
   const execute = async () => {
     if (!w.signer || !w.address) return;
     setRunning(true);
     setError(null);
     const all: string[] = [];
+    let n = 0;
     try {
-      let step: number | null = 0;
-      let n = 0;
-      while (step !== null) {
+      // The server tracks progress and hands out the next unfinished step, so a
+      // retry or reload continues instead of repeating swaps.
+      for (;;) {
         const s: Step = await api<Step>(`/api/intents/${id}/tx`, {
           method: "POST",
-          body: JSON.stringify({ account: w.address, step }),
+          body: JSON.stringify({ account: w.address }),
         });
         setLabel(s.label);
         for (const tx of s.txs) {
@@ -148,31 +152,37 @@ export function SignView() {
           all.push(sig);
           setSigs([...all]);
           setDone(++n);
+          // Report each landed tx at once: a crash mid-step never loses progress.
+          await api(`/api/intents/${id}/status`, {
+            method: "POST",
+            body: JSON.stringify({ signatures: [sig] }),
+          });
         }
-        await api(`/api/intents/${id}/status`, {
-          method: "POST",
-          body: JSON.stringify({ signatures: all.slice(-s.txs.length), done: s.next === null }),
-        });
-        step = s.next;
+        if (s.next === null) break;
       }
       await q.refetch();
     } catch (e) {
       const msg = humanizeError(e);
-      setError(msg);
+      setError(
+        n > 0
+          ? `${msg} ${n} transaction${n === 1 ? "" : "s"} already went through; signing again continues from there.`
+          : msg,
+      );
       await api(`/api/intents/${id}/status`, {
         method: "POST",
-        body: JSON.stringify({ signatures: [], done: false, error: msg }),
+        body: JSON.stringify({ signatures: [], error: msg.slice(0, 300) }),
       }).catch(() => {});
+      await q.refetch().catch(() => {});
     } finally {
       setRunning(false);
     }
   };
   return (
-    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-8 md:px-8">
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted-foreground">Requested by {it.createdBy}</span>
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="intent-title">
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl" data-testid="intent-title">
             {d.title}
           </h1>
           <SimulatedBadge />
@@ -202,7 +212,7 @@ export function SignView() {
                 href={txUrl(s)}
                 target="_blank"
                 rel="noreferrer"
-                className="num underline underline-offset-2"
+                className="mono underline underline-offset-2"
               >
                 {short(s, 8)}
               </a>
@@ -216,7 +226,14 @@ export function SignView() {
         </p>
       ) : null}
       {it.status === "executed" ? (
-        <p className="text-sm text-up">Done. You can return to your agent.</p>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-up">Done. You can return to your agent.</p>
+          {it.result?.index ? (
+            <Link href={`/i/${it.result.index}`} className="text-sm underline underline-offset-2">
+              Open the index
+            </Link>
+          ) : null}
+        </div>
       ) : it.status === "expired" ? (
         <p className="text-sm text-muted-foreground">
           This request expired. Ask the agent to create a new one.
@@ -236,7 +253,11 @@ export function SignView() {
           onClick={() => void execute()}
           data-testid="intent-sign"
         >
-          {running ? "Signing…" : "Review in wallet and sign"}
+          {running
+            ? "Signing…"
+            : it.resumed || it.status === "failed"
+              ? "Continue signing"
+              : "Review in wallet and sign"}
         </Button>
       )}
       <p className="text-xs text-muted-foreground">

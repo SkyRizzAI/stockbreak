@@ -8,6 +8,7 @@ import {
   badgesOf,
   dailyCloses,
   eventsOfType,
+  firstSharePrices,
   followStats,
   getIndex,
   getUser,
@@ -40,6 +41,7 @@ import type {
   ActivityItem,
   AssetKindName,
   AssetPrice,
+  Benchmark,
   CreatorRow,
   Holder,
   IndexDetail,
@@ -82,7 +84,7 @@ export async function indexSummaries(filter?: (r: IndexRow) => boolean): Promise
     sharePricesAt(d, new Date(Date.now() - 30 * DAY)),
     dailyCloses(d, new Date(Date.now() - 31 * DAY)),
   ]);
-  const first = await sharePricesAt(d, new Date(0));
+  const first = await firstSharePrices(d);
   const all = await allIndexes(d);
   const users = await getUsers(d, [...new Set(rows.map((r) => r.creator))]);
   const bySymbol = new Map(all.map((r) => [r.pubkey, r.symbol]));
@@ -106,6 +108,7 @@ export async function indexSummaries(filter?: (r: IndexRow) => boolean): Promise
       pubkey: r.pubkey,
       name: r.name,
       symbol: r.symbol,
+      description: r.description ?? null,
       creator: r.creator,
       creatorHandle: u?.handle ?? null,
       creatorIsAgent: u?.isAgent ?? r.isAgentIndex,
@@ -140,6 +143,15 @@ export async function indexSummaries(filter?: (r: IndexRow) => boolean): Promise
   return out;
 }
 
+/** SPYx daily closes (30 d) for cards: drawdown and return next to an index. */
+export async function benchmark(): Promise<Benchmark> {
+  const d = db();
+  const closes = (await dailyCloses(d, new Date(Date.now() - 31 * DAY))).get(BENCHMARK_INDEX) ?? [];
+  const spark = closes.map((p) => n6(p.v));
+  const r = await benchmarkReturns();
+  return { symbol: "SPYx", spark, ret30d: r.ret30d };
+}
+
 export async function benchmarkReturns(): Promise<{
   ret24h: number | null;
   ret7d: number | null;
@@ -154,7 +166,7 @@ export async function benchmarkReturns(): Promise<{
     ret24h: await r(DAY),
     ret7d: await r(7 * DAY),
     ret30d: await r(30 * DAY),
-    retAll: await r(3650 * DAY),
+    retAll: ret(latest, (await firstSharePrices(d)).get(BENCHMARK_INDEX)),
   };
 }
 
@@ -246,6 +258,7 @@ export async function indexDetail(pubkey: string): Promise<IndexDetail | null> {
       pubkey,
       name: st.name,
       symbol: st.symbol,
+      description: row?.description ?? null,
       creator: st.creator,
       creatorHandle: null,
       creatorIsAgent: false,

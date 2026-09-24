@@ -10,11 +10,30 @@ export function fail(status: number, message: string): NextResponse {
   return NextResponse.json({ error: message }, { status });
 }
 
+/** An expected, user-facing failure (bad input, wrong state); mapped to its status. */
+export class UserError extends Error {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
+    super(message);
+  }
+}
+
+/** Integer query param with bounds; NaN / missing → fallback. */
+export function intParam(v: string | null, fallback: number, min: number, max: number): number {
+  const n = v === null || v === "" ? Number.NaN : Math.trunc(Number(v));
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
 export async function guard<T>(fn: () => Promise<T>): Promise<NextResponse> {
   try {
     const r = await fn();
     return r instanceof NextResponse ? r : ok(r);
   } catch (e) {
+    // A malformed request body is the caller's mistake, not a server error.
+    if (e instanceof SyntaxError && /JSON/.test(e.message)) return fail(400, "Invalid JSON body");
+    if (e instanceof UserError) return fail(e.status, e.message);
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[api]", msg);
     return fail(500, msg.split("\n")[0] ?? "Internal error");

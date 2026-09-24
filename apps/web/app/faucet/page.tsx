@@ -13,6 +13,8 @@ import { chain } from "@/lib/solana";
 import { useRun } from "@/lib/tx";
 import { useWallet } from "@/lib/wallet";
 
+const MIN_SOL_FOR_USDC = 0.003;
+
 export default function FaucetPage() {
   const w = useWallet();
   const cfg = useConfig();
@@ -22,11 +24,13 @@ export default function FaucetPage() {
   const options = CLUSTER === "devnet" ? [1_000, 5_000, 10_000] : [10_000, 100_000, 500_000];
   const [amount, setAmount] = useState(String(options[1]));
   const usdcMint = cfg.data?.assets.find((a) => a.symbol === "USDC")?.mint as Address | undefined;
+  // One faucet tx may create the USDC account (~0.002 SOL rent) plus the fee.
+  const needsSol = !!bal.data && bal.data.sol < MIN_SOL_FOR_USDC;
   return (
-    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-8 md:px-8">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Faucet</h1>
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Faucet</h1>
           <SimulatedBadge />
         </div>
         <p className="text-sm text-muted-foreground">
@@ -40,20 +44,20 @@ export default function FaucetPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border p-4">
+            <div className="rounded-2xl border p-4">
               <div className="text-xs text-muted-foreground">SOL</div>
               <div className="num text-2xl" data-testid="sol-balance">
                 {bal.data ? num(bal.data.sol, 3) : "—"}
               </div>
             </div>
-            <div className="rounded-lg border p-4">
+            <div className="rounded-2xl border p-4">
               <div className="text-xs text-muted-foreground">USDC</div>
               <div className="num text-2xl" data-testid="usdc-balance">
                 {bal.data ? num(bal.data.usdc) : "—"}
               </div>
             </div>
           </div>
-          <section className="flex flex-col gap-3 rounded-lg border p-4">
+          <section className="flex flex-col gap-3 rounded-2xl border p-4">
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-medium">1. SOL for transaction fees</h2>
               <p className="text-xs text-muted-foreground">
@@ -79,7 +83,7 @@ export default function FaucetPage() {
               Get SOL
             </Button>
           </section>
-          <section className="flex flex-col gap-3 rounded-lg border p-4">
+          <section className="flex flex-col gap-3 rounded-2xl border p-4">
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-medium">2. Simulated USDC</h2>
               <p className="text-xs text-muted-foreground">
@@ -100,7 +104,7 @@ export default function FaucetPage() {
             </ToggleGroup>
             <Button
               className="self-start"
-              disabled={busy || !w.signer || !usdcMint || (bal.data?.sol ?? 0) < 0.002}
+              disabled={busy || !w.signer || !usdcMint || !bal.data || needsSol}
               onClick={() =>
                 void run(`Get ${num(Number(amount))} USDC`, async () => ({
                   signature: await sendTx(
@@ -116,7 +120,7 @@ export default function FaucetPage() {
               }
               data-testid="faucet-usdc"
             >
-              {(bal.data?.sol ?? 0) < 0.002 ? "Get SOL first" : `Get ${num(Number(amount))} USDC`}
+              {needsSol ? "Get SOL first" : `Get ${num(Number(amount))} USDC`}
             </Button>
           </section>
         </>

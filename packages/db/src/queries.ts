@@ -169,18 +169,40 @@ export async function latestSnapshots(db: Db): Promise<Map<string, SnapshotRow>>
   return out;
 }
 
-/** Share price at or before `at` per index (for period returns). */
-export async function sharePricesAt(db: Db, at: Date): Promise<Map<string, bigint>> {
+/**
+ * Share price at or before `at` per index (for period returns). An index with
+ * no snapshot that old is omitted (caller shows "—") unless its first snapshot
+ * lies within a tolerance of `at` (max(6h, 10% of the window)), in which case
+ * that first snapshot is used. Pass `fallbackToFirst` (or `at` = epoch, kept
+ * for existing callers) for "all-time" returns; see also `firstSharePrices`.
+ */
+export async function sharePricesAt(
+  db: Db,
+  at: Date,
+  opts: { fallbackToFirst?: boolean } = {},
+): Promise<Map<string, bigint>> {
   const rows = await db.execute<{ index: string; share_price_micro_usd: string }>(
     sql`SELECT DISTINCT ON (index) index, share_price_micro_usd FROM index_snapshots WHERE ts <= ${at.toISOString()}::timestamptz ORDER BY index, ts DESC`,
   );
-  const firsts = await db.execute<{ index: string; share_price_micro_usd: string }>(
-    sql`SELECT DISTINCT ON (index) index, share_price_micro_usd FROM index_snapshots ORDER BY index, ts ASC`,
+  const windowMs = Math.max(0, Date.now() - at.getTime());
+  const toleranceMs = Math.max(6 * 3_600_000, Math.floor(windowMs / 10));
+  const firstLimit =
+    opts.fallbackToFirst || at.getTime() <= 0 ? null : new Date(at.getTime() + toleranceMs);
+  const firsts = await db.execute<{ index: string; ts: Date; share_price_micro_usd: string }>(
+    sql`SELECT DISTINCT ON (index) index, ts, share_price_micro_usd FROM index_snapshots ORDER BY index, ts ASC`,
   );
   const out = new Map<string, bigint>();
-  for (const r of firsts) out.set(r.index, BigInt(r.share_price_micro_usd));
+  for (const r of firsts) {
+    if (firstLimit && new Date(r.ts).getTime() > firstLimit.getTime()) continue;
+    out.set(r.index, BigInt(r.share_price_micro_usd));
+  }
   for (const r of rows) out.set(r.index, BigInt(r.share_price_micro_usd));
   return out;
+}
+
+/** Earliest snapshot share price per index (all-time returns). */
+export async function firstSharePrices(db: Db): Promise<Map<string, bigint>> {
+  return sharePricesAt(db, new Date(0), { fallbackToFirst: true });
 }
 
 /** Daily closing share price per index since `since` (sparklines). */
@@ -269,6 +291,166 @@ export async function holderCounts(db: Db): Promise<Map<string, number>> {
     .where(sql`${positions.shares} > 0 AND ${positions.wallet} <> ${positions.index}`)
     .groupBy(positions.index);
   return new Map(rows.map((r) => [r.index, r.n]));
+}
+
+export async function allPositions(db: Db): Promise<PositionRow[]> {
+  return db.select().from(positions);
+}
+
+/** One position change derived from an indexed event (shares at event time, not chain now). */
+export interface PositionDelta {
+  wallet: string;
+  index: string;
+  /** Shares received (join, fee claim). */
+  addShares?: bigint;
+  /** Cost basis added with `addShares` (micro-USD). */
+  addCostMicroUsd?: bigint;
+  /** Shares burned (redeem). */
+  burnShares?: bigint;
+  /** Event time (used as firstJoinedAt for a new position). */
+  ts: Date;
+}
+
+/**
+ * Pure position update: burns remove cost pro-rata to min(burned, prevShares)/prevShares,
+ * receipts add their cost. Never goes negative.
+ */
+export function applyDelta(
+  prev: { shares: bigint; costBasisMicroUsd: bigint } | undefined,
+  d: { addShares?: bigint; addCostMicroUsd?: bigint; burnShares?: bigint },
+): { shares: bigint; costBasisMicroUsd: bigint } {
+  let shares = prev?.shares ?? 0n;
+  let cost = prev?.costBasisMicroUsd ?? 0n;
+  const burn = d.burnShares ?? 0n;
+  if (burn > 0n) {
+    if (shares > 0n) {
+      const b = burn < shares ? burn : shares;
+      cost -= (cost * b) / shares;
+      shares -= b;
+    }
+    if (shares === 0n) cost = 0n;
+  }
+  const add = d.addShares ?? 0n;
+  if (add > 0n) {
+    shares += add;
+    cost += d.addCostMicroUsd ?? 0n;
+  }
+  return { shares, costBasisMicroUsd: cost < 0n ? 0n : cost };
+}
+
+/**
+ * Pure reconciliation of a stored position against the on-chain share balance
+ * (share transfers are not indexed): fewer shares scale cost down pro-rata,
+ * more shares add cost at `sharePriceMicroUsd`.
+ */
+export function reconcileDelta(
+  prev: { shares: bigint; costBasisMicroUsd: bigint } | undefined,
+  chainShares: bigint,
+  sharePriceMicroUsd: bigint,
+): { shares: bigint; costBasisMicroUsd: bigint } {
+  if (chainShares <= 0n) return { shares: 0n, costBasisMicroUsd: 0n };
+  const shares = prev?.shares ?? 0n;
+  let cost = prev?.costBasisMicroUsd ?? 0n;
+  if (chainShares < shares) cost = (cost * chainShares) / shares;
+  else if (chainShares > shares) cost += ((chainShares - shares) * sharePriceMicroUsd) / 1_000_000n;
+  return { shares: chainShares, costBasisMicroUsd: cost };
+}
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+async function writePosition(
+  tx: Tx,
+  wallet: string,
+  index: string,
+  next: { shares: bigint; costBasisMicroUsd: bigint },
+  firstJoinedAt: Date,
+): Promise<void> {
+  if (next.shares <= 0n) {
+    await tx.delete(positions).where(and(eq(positions.wallet, wallet), eq(positions.index, index)));
+    return;
+  }
+  await tx
+    .insert(positions)
+    .values({ wallet, index, ...next, firstJoinedAt })
+    .onConflictDoUpdate({
+      target: [positions.wallet, positions.index],
+      set: { ...next, updatedAt: new Date() },
+    });
+}
+
+async function lockedPosition(tx: Tx, wallet: string, index: string) {
+  return (
+    await tx
+      .select()
+      .from(positions)
+      .where(and(eq(positions.wallet, wallet), eq(positions.index, index)))
+      .limit(1)
+      .for("update")
+  )[0];
+}
+
+/**
+ * Atomically store one transaction's events, apply the position deltas of the
+ * events that were newly inserted (replays are no-ops), and advance the
+ * indexer cursor to this transaction. Returns the number of new event rows.
+ */
+export async function applyIndexedTx(
+  db: Db,
+  input: {
+    program: string;
+    signature: string;
+    slot: bigint;
+    events: (typeof events.$inferInsert)[];
+    /** Keyed by the event's ixIndex. */
+    deltas: Map<number, PositionDelta>;
+  },
+): Promise<number> {
+  return db.transaction(async (tx) => {
+    const inserted = input.events.length
+      ? await tx
+          .insert(events)
+          .values(input.events)
+          .onConflictDoNothing()
+          .returning({ ixIndex: events.ixIndex })
+      : [];
+    for (const { ixIndex } of inserted) {
+      const d = input.deltas.get(ixIndex);
+      if (!d || d.wallet === d.index) continue;
+      const prev = await lockedPosition(tx, d.wallet, d.index);
+      await writePosition(tx, d.wallet, d.index, applyDelta(prev, d), prev?.firstJoinedAt ?? d.ts);
+    }
+    await tx
+      .insert(indexerState)
+      .values({ program: input.program, lastSignature: input.signature, lastSlot: input.slot })
+      .onConflictDoUpdate({
+        target: indexerState.program,
+        set: { lastSignature: input.signature, lastSlot: input.slot, updatedAt: new Date() },
+      });
+    return inserted.length;
+  });
+}
+
+/** Bring a stored position in line with the on-chain share balance. Returns true if it changed. */
+export async function reconcilePosition(
+  db: Db,
+  wallet: string,
+  index: string,
+  chainShares: bigint,
+  sharePriceMicroUsd: bigint,
+): Promise<boolean> {
+  if (wallet === index) return false;
+  return db.transaction(async (tx) => {
+    const prev = await lockedPosition(tx, wallet, index);
+    if ((prev?.shares ?? 0n) === chainShares) return false;
+    await writePosition(
+      tx,
+      wallet,
+      index,
+      reconcileDelta(prev, chainShares, sharePriceMicroUsd),
+      prev?.firstJoinedAt ?? new Date(),
+    );
+    return true;
+  });
 }
 
 // ---------------- events ----------------
@@ -522,17 +704,22 @@ export async function followStats(db: Db, wallet: string, viewer?: string) {
 
 // ---------------- gamification ----------------
 
+const AWARD_CHUNK = 1000; // 4 params per row, well under the 65,535 limit
+
 export async function awardXp(
   db: Db,
   rows: { wallet: string; amount: number; reason: string; ref: string }[],
 ): Promise<number> {
-  if (!rows.length) return 0;
-  const r = await db
-    .insert(xpLedger)
-    .values(rows)
-    .onConflictDoNothing()
-    .returning({ id: xpLedger.id });
-  return r.length;
+  let added = 0;
+  for (let i = 0; i < rows.length; i += AWARD_CHUNK) {
+    const r = await db
+      .insert(xpLedger)
+      .values(rows.slice(i, i + AWARD_CHUNK))
+      .onConflictDoNothing()
+      .returning({ id: xpLedger.id });
+    added += r.length;
+  }
+  return added;
 }
 
 export async function xpOf(db: Db, wallet: string): Promise<number> {
@@ -567,6 +754,23 @@ export async function awardBadge(db: Db, wallet: string, badge: string): Promise
     .onConflictDoNothing()
     .returning({ b: badges.badge });
   return r.length === 1;
+}
+
+/** Bulk, chunked badge awards (duplicates are ignored). Returns newly awarded count. */
+export async function awardBadges(
+  db: Db,
+  rows: { wallet: string; badge: string }[],
+): Promise<number> {
+  let added = 0;
+  for (let i = 0; i < rows.length; i += AWARD_CHUNK) {
+    const r = await db
+      .insert(badges)
+      .values(rows.slice(i, i + AWARD_CHUNK))
+      .onConflictDoNothing()
+      .returning({ b: badges.badge });
+    added += r.length;
+  }
+  return added;
 }
 
 export async function badgesOf(db: Db, wallet: string) {

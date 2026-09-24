@@ -149,3 +149,31 @@ Format: tanggal · konteks · opsi · pilihan · alasan.
 - Pilihan: tabel baru `auth_sessions`, `posts`, `post_likes`, `post_comments` (PLAN §7.3). Aturan feed & anti-spam di PLAN §7.7.
 - Sesi: sign-in sekali per 24 jam (cookie httpOnly) agar like/komentar tidak memunculkan popup wallet setiap klik. Aksi profil/follow tetap memakai tanda tangan per aksi (tidak berubah).
 - Tidak ada perubahan program on-chain maupun tool MCP.
+
+## D034 — 2026-09-24 — Desain visual mengikuti refs/Stocklana.html ("quiet green desk")
+- Konteks: user meminta UI disesuaikan dengan `refs/Stocklana.html`: modern, minimalis, hijau, sedikit glass, tanpa "AI slop". Ini menggantikan palet monokrom PLAN §8.3.
+- Token (dark, default): Ground `#06140E`, Surface `#0B1C15`, Raised `#12271E`, Line `#1C3329`, Hairline `#15291F`, Muted `#9BB3A7`, Text `#E8F3EC`. Mint `#4BF0A9` hanya untuk aksi utama (pill), logo, dan return positif. Coral `#FF8A7A` untuk negatif, Amber `#F4C65A` untuk paused/terblokir. Index mark memakai 4 hijau `#D6F5E6/#8FDDB8/#4FB58A/#2A7A5C`.
+- Font Manrope (angka tabular) untuk teks dan angka; IBM Plex Mono (`.mono`) hanya untuk ticker dan alamat.
+- Radius: tag 6, mark 8, kontrol 10, kartu 16. Hanya aksi utama berbentuk pill.
+- Glass hanya di top bar/nav mobile (`glass-bar`) dan panel Join/Redeem (`glass-panel`). Tanpa glow/shadow; animasi hanya saat hover.
+- Dark menjadi default (bukan mengikuti OS). Varian light diturunkan dari keluarga hijau yang sama, dengan warna data digelapkan agar kontrasnya cukup, dan tetap bisa dipilih lewat toggle.
+- Implementasi: token di `apps/web/app/globals.css`; komponen shadcn disesuaikan (button pill, outline surface, segmented toggle, underline tabs, table hairline, switch/slider/progress tanpa mint).
+
+## D035 — 2026-09-24 — Contract: kartu index untuk feed (variasi) + kartu kreator
+- Konteks: permintaan client, "bisa di-design semacam card; ada koleksi token dalam index card-nya; variasinya beda-beda untuk share di feed" (contoh: kartu index bergaya gradien + ilustrasi 3D, dan kartu "Top Traders").
+- Pilihan: struktur dan fungsi diambil (header visual, koleksi token, return + sparkline, TVL, drawdown vs benchmark, kreator). Gaya gradien ungu dan ilustrasi 3D **tidak** diikuti karena melanggar PLAN §8.2 dan D034. Variasi dibuat dari data index sendiri dengan keluarga hijau: `mark`, `tokens`, `chart`.
+- Kontrak: kolom `posts.card_variant` (null, atau salah satu dari tiga variasi). Endpoint baca `/api/benchmark` (sparkline & drawdown SPYx). Tidak ada perubahan program atau tool MCP.
+
+## D036 — 2026-09-24 — QA skenario A16: pemulihan alur multi-langkah & progres intent di server
+- **Konteks**: audit A16 menemukan alur multi-transaksi (zap join/redeem, create+deposit, /sign, Blink berantai) bisa berhenti di tengah dan membuat user mengulang langkah yang sudah terjadi (swap ganda, index ganda).
+- **Keputusan**:
+  - Kegagalan parsial dilaporkan sebagai `PartialZapError`, dengan pemulihan dari saldo wallet saat ini (`joinWithHeld`, `swapToUsdc`), tidak pernah dengan mengulang dari awal.
+  - Progres intent /sign dipegang server (`_next`, `_built` di `params`), dan hanya maju berdasarkan signature yang terverifikasi on-chain.
+  - State Blink ditandatangani HMAC (kunci diturunkan dari `DATABASE_URL`).
+  - Baris index bisa disinkronkan on-demand dari chain oleh web (`ensureIndexRow`) agar alur tepat setelah create tidak bergantung pada lag worker.
+  - URI metadata memakai alamat index.
+- **Kontrak**:
+  - Tanpa perubahan skema DB atau program.
+  - Tool MCP `get_intent_status` menambah field `result.index` (aditif); `build_redeem` menolak jumlah share 0.
+  - API `/api/feed` dan `/api/posts` memakai parameter `cursor` (opak), menggantikan `before`.
+- **Belum**: C8 (follower yang parent-nya tumbuh menjadi >10 aset) butuh perubahan program. Worker hanya backoff dan mencatat log.

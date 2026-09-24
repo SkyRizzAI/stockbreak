@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import type { NextRequest } from "next/server";
-import { actionError, actionJson, fromB64url, preflight } from "@/lib/server/actions";
+import { actionError, actionFail, actionJson, preflight, verifyState } from "@/lib/server/actions";
 import { isAddress } from "@/lib/server/http";
 import { joinStep } from "@/lib/server/steps";
 
@@ -14,18 +14,23 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/actions/joi
   const amount = Number(p.get("amount"));
   const k = Number(p.get("k") ?? "1");
   const n = Number(p.get("n") ?? "1");
-  const state = fromB64url<Record<string, unknown>>(p.get("state"));
   let account: string | undefined;
   try {
     account = ((await req.json()) as { account?: string }).account;
   } catch {
     return actionError("Invalid body");
   }
-  if (!isAddress(pubkey) || !isAddress(account) || !state || !(amount > 0))
+  if (!isAddress(pubkey) || !isAddress(account) || !(amount >= 1))
     return actionError("Invalid request");
+  const state = verifyState<Record<string, unknown>>(
+    p.get("state"),
+    `${account}.${pubkey}.${amount}`,
+  );
+  if (!state)
+    return actionError("This link was changed or belongs to another wallet. Start again.");
   try {
     if (k < n) {
-      const r = await joinStep(account as Address, pubkey as Address, amount, 0, {});
+      const r = await joinStep(account as Address, pubkey as Address, amount, 0, {}, false);
       const tx = r.txs[k];
       if (!tx) return actionError("Nothing left to swap");
       return actionJson({
@@ -47,6 +52,6 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/actions/joi
       message: `Joined with $${amount} USDC`,
     });
   } catch (e) {
-    return actionError(e instanceof Error ? (e.message.split("\n")[0] ?? "Failed") : "Failed", 500);
+    return actionFail(e);
   }
 }

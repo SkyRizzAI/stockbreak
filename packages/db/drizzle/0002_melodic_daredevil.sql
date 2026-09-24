@@ -1,0 +1,1 @@
+ALTER TABLE "posts" ADD COLUMN "card_variant" text;

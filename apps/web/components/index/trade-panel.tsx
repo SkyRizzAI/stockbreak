@@ -1,8 +1,12 @@
 "use client";
 import {
   ata,
+  estimateZapInLamports,
   fetchIndex,
   fetchTokenBalances,
+  joinWithHeld,
+  MIN_INITIAL_USDC,
+  planJoinWithHeld,
   planZapIn,
   planZapOut,
   TOKEN_PROGRAM,
@@ -19,14 +23,31 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useZapRecovery } from "@/components/wallet/recovery";
 import { useConfig } from "@/lib/api";
-import { price as fmtPrice, num, usd } from "@/lib/format";
+import { price as fmtPrice, num, toRaw, usd } from "@/lib/format";
 import { chain } from "@/lib/solana";
-import { useRun } from "@/lib/tx";
+import { stepLabel, useRun } from "@/lib/tx";
 import type { IndexDetail } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
 
 const QUICK = [100, 1_000, 10_000];
+const DECIMALS = 6;
+
+/** Exact decimal string of a raw 6-decimal amount (round-trips through toRaw). */
+function fromRaw(raw: bigint): string {
+  const s = raw.toString().padStart(DECIMALS + 1, "0");
+  const i = s.slice(0, -DECIMALS);
+  const f = s.slice(-DECIMALS).replace(/0+$/, "");
+  return f ? `${i}.${f}` : i;
+}
+
+/** Keep digits and one dot, at most 6 decimals. */
+function cleanAmount(v: string): string {
+  const t = v.replace(/[^\d.]/g, "");
+  const [i = "", ...rest] = t.split(".");
+  return rest.length ? `${i}.${rest.join("").slice(0, DECIMALS)}` : i;
+}
 
 function useShareBalance(address: string | null, shareMint: string) {
   return useQuery({
@@ -35,7 +56,7 @@ function useShareBalance(address: string | null, shareMint: string) {
     refetchInterval: 10_000,
     queryFn: async () => {
       const a = await ata(address as Address, shareMint as Address, TOKEN_PROGRAM);
-      return Number((await fetchTokenBalances(chain(), [a])).get(a) ?? 0n) / 1e6;
+      return (await fetchTokenBalances(chain(), [a])).get(a) ?? 0n;
     },
   });
 }
@@ -70,19 +91,51 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
   const [amount, setAmount] = useState("1000");
   const { run, busy, progress } = useRun();
   const usdcMint = cfg.data?.assets.find((a) => a.symbol === "USDC")?.mint as Address | undefined;
-  const value = Number(amount);
-  const valid = Number.isFinite(value) && value >= 1;
+  const index = { pubkey: d.pubkey, symbol: d.symbol, lookupTable: d.lookupTable };
+  const recover = useZapRecovery(run, usdcMint, index);
+  const initial = BigInt(d.effectiveSupply || "0") === 0n;
+  const raw = toRaw(amount, DECIMALS);
+  const minRaw = initial ? MIN_INITIAL_USDC : 1n;
+  const valid = raw !== null && raw >= minRaw;
+  const value = raw === null ? 0 : Number(raw) / 1e6;
   const est = useQuery({
     queryKey: ["zapin", d.pubkey, amount, d.navLiveUsd],
     enabled: valid && !!usdcMint,
     queryFn: async () => {
       const st = await fetchIndex(chain(), d.pubkey as Address);
-      return planZapIn(chain(), st, usdcMint as Address, BigInt(Math.round(value * 1e6)));
+      return planZapIn(chain(), st, usdcMint as Address, raw as bigint);
     },
   });
+  // SOL for fees + rent of every token account the first join creates.
+  const cost = useQuery({
+    queryKey: ["zapin-cost", w.address, d.pubkey, usdcMint],
+    enabled: !!w.address && !!usdcMint,
+    queryFn: () =>
+      estimateZapInLamports(
+        chain(),
+        w.address as Address,
+        d.live.map((a) => ({ mint: a.mint as Address, tokenProgram: a.tokenProgram as Address })),
+        d.shareMint as Address,
+        usdcMint as Address,
+      ),
+  });
+  // Index assets already in the wallet (e.g. a join that stopped after the swaps).
+  const held = useQuery({
+    queryKey: ["held-join", w.address, d.pubkey, d.navLiveUsd],
+    enabled: !!w.address && !initial,
+    refetchInterval: 15_000,
+    queryFn: async () =>
+      planJoinWithHeld(
+        chain(),
+        w.address as Address,
+        await fetchIndex(chain(), d.pubkey as Address),
+      ),
+  });
   const insufficient = !!bal.data && valid && value > bal.data.usdc;
-  const noSol = !!bal.data && bal.data.sol < 0.01;
+  const needSol = cost.data ? Number(cost.data.lamports) / 1e9 : 0.005;
+  const noSol = !!bal.data && bal.data.sol < needSol;
   const legs = est.data?.legs.filter((l) => l.usdcIn > 0n) ?? [];
+  const tooSmall = est.data?.expectedShares === 0n;
   const submit = () =>
     run(
       `Join ${d.symbol}`,
@@ -92,16 +145,52 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
           w.signer as NonNullable<typeof w.signer>,
           d.pubkey as Address,
           usdcMint as Address,
-          BigInt(Math.round(value * 1e6)),
+          raw as bigint,
           {
             lookupTable: d.lookupTable as Address | null,
             onProgress,
           },
         ),
       (r) => `Joined ${d.symbol}: ${num(Number(r.shares) / 1e6)} shares`,
+      { recover },
     );
+  const finishJoin = () =>
+    run(
+      `Join ${d.symbol}`,
+      (onProgress) =>
+        joinWithHeld(chain(), w.signer as NonNullable<typeof w.signer>, d.pubkey as Address, {
+          lookupTable: d.lookupTable as Address | null,
+          onProgress,
+        }),
+      (r) => `Joined ${d.symbol}: ${num(Number(r.shares) / 1e6)} shares`,
+    );
+  const hint =
+    raw !== null && raw > 0n && raw < minRaw
+      ? "The first deposit must be at least $1.10: the program needs $1 of assets after swap costs."
+      : tooSmall
+        ? "This amount is too small to mint any shares."
+        : null;
   return (
     <div className="flex flex-col gap-4">
+      {w.signer && held.data && held.data.shares > 0n ? (
+        <div className="flex flex-col gap-2 rounded-2xl border p-3 text-sm">
+          <span className="text-muted-foreground">
+            Your wallet holds this index&apos;s assets, worth about{" "}
+            <span className="num text-foreground">
+              {num(Number(held.data.shares) / 1e6)} shares
+            </span>
+            .
+          </span>
+          <Button
+            variant="outline"
+            disabled={busy || d.paused}
+            onClick={() => void finishJoin()}
+            data-testid="finish-join"
+          >
+            Finish join with assets in your wallet
+          </Button>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <Label htmlFor="join-amount">Amount (USDC)</Label>
@@ -120,9 +209,11 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
           inputMode="decimal"
           className="num h-11 text-lg"
           value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+          onChange={(e) => setAmount(cleanAmount(e.target.value))}
+          aria-invalid={!!hint}
           data-testid="join-amount"
         />
+        {hint ? <p className="text-xs text-destructive">{hint}</p> : null}
         <div className="flex gap-2">
           {QUICK.map((q) => (
             <Button
@@ -137,7 +228,7 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-2 rounded-lg border p-3">
+      <div className="flex flex-col gap-2 rounded-2xl border p-3">
         <Row
           k="Estimated shares"
           v={
@@ -159,7 +250,7 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
             <ul className="mt-2 flex flex-col gap-1">
               {legs.map((l) => (
                 <li key={l.mint} className="flex justify-between text-xs">
-                  <span className="num">{d.live.find((a) => a.mint === l.mint)?.symbol}</span>
+                  <span className="mono">{d.live.find((a) => a.mint === l.mint)?.symbol}</span>
                   <span className="num text-muted-foreground">{usd(Number(l.usdcIn) / 1e6)}</span>
                 </li>
               ))}
@@ -168,11 +259,7 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
         ) : null}
       </div>
       {progress ? (
-        <Stepper
-          label={progress.step === "join" ? "Joining" : "Swapping USDC"}
-          done={progress.done}
-          total={progress.total}
-        />
+        <Stepper label={stepLabel(progress.step)} done={progress.done} total={progress.total} />
       ) : null}
       {!w.signer ? (
         <Button size="lg" className="h-11" onClick={onConnect}>
@@ -204,7 +291,7 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
         <Button
           size="lg"
           className="h-11"
-          disabled={!valid || busy || !usdcMint}
+          disabled={!valid || busy || !usdcMint || tooSmall || !est.data}
           onClick={() => void submit()}
           data-testid="join-submit"
         >
@@ -212,8 +299,12 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
         </Button>
       )}
       <p className="text-xs text-muted-foreground">
-        Swaps USDC into each asset at oracle prices (0.3% spread), then deposits. Needs{" "}
-        {Math.max(1, legs.length > 2 ? 3 : 2)} signatures.
+        Swaps USDC into each asset at oracle prices (
+        {((cfg.data?.params.spreadBps ?? 30) / 100).toFixed(1)}% spread), then deposits. You approve
+        each transaction: the swaps, then the deposit.
+        {noSol && cost.data
+          ? ` Needs about ${num(needSol, 3)} SOL for fees${cost.data.missingAccounts ? ` and ${cost.data.missingAccounts} new token accounts` : ""}.`
+          : ""}
       </p>
     </div>
   );
@@ -227,29 +318,43 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
   const [toUsdc, setToUsdc] = useState(true);
   const { run, busy, progress } = useRun();
   const usdcMint = cfg.data?.assets.find((a) => a.symbol === "USDC")?.mint as Address | undefined;
-  const value = Number(amount);
-  const valid = Number.isFinite(value) && value > 0 && value <= (shares.data ?? 0) + 1e-9;
-  const raw = BigInt(Math.floor(value * 1e6));
+  const recover = useZapRecovery(run, usdcMint);
+  const held = shares.data ?? 0n;
+  const raw = toRaw(amount, DECIMALS) ?? 0n;
+  const valid = raw > 0n && raw <= held;
   const est = useQuery({
-    queryKey: ["zapout", d.pubkey, amount],
+    queryKey: ["zapout", d.pubkey, raw.toString()],
     enabled: valid && !!usdcMint,
     queryFn: async () =>
       planZapOut(chain(), await fetchIndex(chain(), d.pubkey as Address), usdcMint as Address, raw),
   });
+  const nothingOut = !!est.data && est.data.amounts.every((a) => a === 0n);
+  const hint =
+    amount && raw === 0n
+      ? "Enter an amount greater than zero."
+      : raw > held
+        ? "You do not hold that many shares."
+        : nothingOut
+          ? "This amount is too small to redeem any assets."
+          : null;
   const submit = () =>
-    run(`Redeem ${d.symbol}`, (onProgress) =>
-      zapOut(
-        chain(),
-        w.signer as NonNullable<typeof w.signer>,
-        d.pubkey as Address,
-        usdcMint as Address,
-        raw,
-        {
-          toUsdc,
-          lookupTable: d.lookupTable as Address | null,
-          onProgress,
-        },
-      ),
+    run(
+      `Redeem ${d.symbol}`,
+      (onProgress) =>
+        zapOut(
+          chain(),
+          w.signer as NonNullable<typeof w.signer>,
+          d.pubkey as Address,
+          usdcMint as Address,
+          raw,
+          {
+            toUsdc,
+            lookupTable: d.lookupTable as Address | null,
+            onProgress,
+          },
+        ),
+      undefined,
+      { recover },
     );
   return (
     <div className="flex flex-col gap-4">
@@ -260,9 +365,9 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
             <button
               type="button"
               className="num hover:text-foreground"
-              onClick={() => setAmount(String(shares.data))}
+              onClick={() => setAmount(fromRaw(held))}
             >
-              Max {num(shares.data)}
+              Max {num(Number(held) / 1e6)}
             </button>
           ) : null}
         </div>
@@ -272,17 +377,19 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
           className="num h-11 text-lg"
           value={amount}
           placeholder="0"
-          onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+          onChange={(e) => setAmount(cleanAmount(e.target.value))}
+          aria-invalid={!!hint}
           data-testid="redeem-amount"
         />
+        {hint ? <p className="text-xs text-destructive">{hint}</p> : null}
       </div>
-      <div className="flex items-center justify-between rounded-lg border p-3">
+      <div className="flex items-center justify-between rounded-2xl border p-3">
         <Label htmlFor="to-usdc" className="text-sm">
           Receive USDC
         </Label>
         <Switch id="to-usdc" checked={toUsdc} onCheckedChange={setToUsdc} />
       </div>
-      <div className="flex flex-col gap-2 rounded-lg border p-3">
+      <div className="flex flex-col gap-2 rounded-2xl border p-3">
         <Row
           k={toUsdc ? "Estimated USDC" : "Estimated value"}
           v={
@@ -297,7 +404,7 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
           <ul className="flex flex-col gap-1">
             {d.live.map((a, i) => (
               <li key={a.mint} className="flex justify-between text-xs">
-                <span className="num">{a.symbol}</span>
+                <span className="mono">{a.symbol}</span>
                 <span className="num text-muted-foreground">
                   {num(Number(est.data.amounts[i] ?? 0n) / 10 ** a.decimals, 4)}
                 </span>
@@ -306,12 +413,14 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
           </ul>
         ) : null}
       </div>
-      {progress ? <Stepper label="Redeeming" done={progress.done} total={progress.total} /> : null}
+      {progress ? (
+        <Stepper label={stepLabel(progress.step)} done={progress.done} total={progress.total} />
+      ) : null}
       {!w.signer ? (
         <Button size="lg" className="h-11" onClick={onConnect}>
           Connect wallet
         </Button>
-      ) : (shares.data ?? 0) === 0 ? (
+      ) : held === 0n ? (
         <Button size="lg" className="h-11" disabled>
           You hold no shares
         </Button>
@@ -319,7 +428,7 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
         <Button
           size="lg"
           className="h-11"
-          disabled={!valid || busy}
+          disabled={!valid || busy || nothingOut || !usdcMint}
           onClick={() => void submit()}
           data-testid="redeem-submit"
         >
@@ -327,7 +436,8 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
         </Button>
       )}
       <p className="text-xs text-muted-foreground">
-        Redeem is always available, even when the index is paused.
+        Redeem works even when the index is paused. It is briefly unavailable only while a rebalance
+        is running.
       </p>
     </div>
   );
@@ -336,18 +446,19 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
 export function TradePanel({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
   const w = useWallet();
   const shares = useShareBalance(w.address, d.shareMint);
+  const ui = Number(shares.data ?? 0n) / 1e6;
   return (
     <div className="flex flex-col gap-4">
       {shares.data ? (
         <div className="flex items-baseline justify-between rounded-lg bg-muted px-3 py-2 text-sm">
           <span className="text-muted-foreground">Your position</span>
           <span className="num">
-            {num(shares.data)} · {usd(shares.data * d.sharePriceLive)}
+            {num(ui)} · {usd(ui * d.sharePriceLive)}
           </span>
         </div>
       ) : null}
       <Tabs defaultValue="join">
-        <TabsList className="w-full">
+        <TabsList variant="line" className="w-full justify-start gap-4">
           <TabsTrigger value="join" className="flex-1">
             Join
           </TabsTrigger>

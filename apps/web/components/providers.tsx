@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ApiError } from "@/lib/api";
+import { useSessionFollowsWallet } from "@/lib/social";
 import { useThemeInit } from "@/lib/theme";
 
 function makeClient() {
@@ -30,10 +31,16 @@ export function Providers({ children }: { children: ReactNode }) {
   useThemeInit();
   return (
     <QueryClientProvider client={qc}>
+      <SessionGuard />
       <TooltipProvider>
         {children}
         <Toaster position="bottom-right" />
       </TooltipProvider>
     </QueryClientProvider>
   );
+}
+
+function SessionGuard() {
+  useSessionFollowsWallet();
+  return null;
 }

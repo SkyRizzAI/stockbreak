@@ -7,21 +7,20 @@ import { WalletButton } from "./wallet-button";
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden className="text-foreground">
+    <Link href="/" className="flex items-center gap-2.5 text-[19px] font-bold tracking-tight">
+      {/* The logo is one of the three places mint is allowed. */}
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden>
+        <rect width="30" height="30" rx="8" className="fill-primary" />
+        <rect x="8" y="16" width="3.5" height="6" rx="1" className="fill-primary-foreground" />
         <rect
-          x="1"
-          y="1"
-          width="20"
-          height="20"
-          rx="5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
+          x="13.25"
+          y="11.5"
+          width="3.5"
+          height="10.5"
+          rx="1"
+          className="fill-primary-foreground"
         />
-        <rect x="5" y="12" width="3" height="5" fill="currentColor" />
-        <rect x="9.5" y="8" width="3" height="9" fill="currentColor" />
-        <rect x="14" y="5" width="3" height="12" fill="currentColor" />
+        <rect x="18.5" y="8" width="3.5" height="14" rx="1" className="fill-primary-foreground" />
       </svg>
       <span>{APP_NAME}</span>
     </Link>
@@ -30,13 +29,13 @@ function Logo() {
 
 export function TopBar() {
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center gap-4 px-4">
+    <header className="glass-bar sticky top-0 z-40 border-b">
+      <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center gap-6 px-4 md:h-[72px] md:px-8">
         <Logo />
         <DesktopNav />
         <div className="ml-auto flex items-center gap-2">
           <span
-            className="hidden h-6 items-center rounded-md border px-2 text-xs text-muted-foreground sm:inline-flex"
+            className="hidden h-7 items-center rounded-sm border px-2.5 text-[13px] text-muted-foreground sm:inline-flex"
             data-testid="cluster-badge"
           >
             {CLUSTER_LABEL}

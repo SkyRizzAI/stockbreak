@@ -25,7 +25,7 @@ export function IndexTags({ i }: { i: IndexSummary }) {
       ) : i.parent ? (
         <Tag>Clone</Tag>
       ) : null}
-      {i.paused ? <Tag className="text-warn">Paused</Tag> : null}
+      {i.paused ? <Tag className="border-warn/40 text-warn">Paused</Tag> : null}
     </span>
   );
 }
@@ -73,8 +73,8 @@ export function IndexTable({
                     />
                     <span className="flex min-w-0 flex-col">
                       <span className="flex items-center gap-2 font-medium">
-                        <span className="truncate">{i.name}</span>
-                        <span className="num text-xs text-muted-foreground">{i.symbol}</span>
+                        <span className="truncate font-semibold">{i.name}</span>
+                        <span className="mono text-xs text-muted-foreground">{i.symbol}</span>
                       </span>
                       <IndexTags i={i} />
                     </span>
@@ -109,7 +109,7 @@ export function IndexTable({
           </TableBody>
         </Table>
       </div>
-      <ul className="divide-y rounded-lg border md:hidden">
+      <ul className="divide-y rounded-2xl border md:hidden">
         {rows.map((i, n) => (
           <li key={i.pubkey}>
             <Link
@@ -124,8 +124,8 @@ export function IndexTable({
                 size={28}
               />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm font-medium">{i.name}</span>
-                <span className="num text-xs text-muted-foreground">
+                <span className="truncate text-sm font-semibold">{i.name}</span>
+                <span className="mono text-xs text-muted-foreground">
                   {i.symbol} · <Usd value={i.navUsd} compact className="text-muted-foreground" />
                 </span>
               </span>

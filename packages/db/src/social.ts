@@ -114,7 +114,10 @@ export async function isDuplicate(
   const r = await db
     .select({ id: t.id })
     .from(t)
-    .where(and(eq(t.author, author), eq(t.body, body), gte(t.createdAt, since)))
+    // Deleted rows don't block re-posting (they still count toward rate limits).
+    .where(
+      and(eq(t.author, author), eq(t.body, body), gte(t.createdAt, since), isNull(t.deletedAt)),
+    )
     .limit(1);
   return r.length > 0;
 }
@@ -123,7 +126,7 @@ export async function isDuplicate(
 
 export async function createPost(
   db: Db,
-  row: { author: string; body: string; index: string | null },
+  row: { author: string; body: string; index: string | null; cardVariant?: string | null },
 ): Promise<PostRow> {
   return (await db.insert(posts).values(row).returning())[0] as PostRow;
 }
@@ -151,13 +154,15 @@ export async function deletePost(db: Db, id: number, author: string): Promise<bo
 export async function listPosts(
   db: Db,
   filter: { authors?: string[]; indexes?: string[]; index?: string; author?: string },
-  before: Date,
+  /** Keyset cursor: only posts with a smaller id (ids grow with creation time). */
+  beforeId: number | null,
   limit: number,
 ): Promise<PostRow[]> {
   const scope = [];
   if (filter.authors?.length) scope.push(inArray(posts.author, filter.authors));
   if (filter.indexes?.length) scope.push(inArray(posts.index, filter.indexes));
-  const conds = [isNull(posts.deletedAt), lt(posts.createdAt, before)];
+  const conds = [isNull(posts.deletedAt)];
+  if (beforeId !== null) conds.push(lt(posts.id, beforeId));
   if (filter.index) conds.push(eq(posts.index, filter.index));
   if (filter.author) conds.push(eq(posts.author, filter.author));
   if (scope.length) {
@@ -168,7 +173,7 @@ export async function listPosts(
     .select()
     .from(posts)
     .where(and(...conds))
-    .orderBy(desc(posts.createdAt))
+    .orderBy(desc(posts.id))
     .limit(limit);
 }
 
@@ -290,13 +295,18 @@ export async function indexesOfWallet(db: Db, wallet: string): Promise<string[]>
 export async function feedEvents(
   db: Db,
   filter: { wallets?: string[]; indexes?: string[]; types: string[] },
-  before: Date,
+  /** Keyset cursor (ts, signature, ixIndex): several events often share one block second. */
+  before: { ts: Date; signature: string; ixIndex: number } | null,
   limit: number,
 ): Promise<EventRow[]> {
   const scope = [];
   if (filter.wallets?.length) scope.push(inArray(events.wallet, filter.wallets));
   if (filter.indexes?.length) scope.push(inArray(events.index, filter.indexes));
-  const conds = [inArray(events.type, filter.types), lt(events.ts, before)];
+  const conds = [inArray(events.type, filter.types)];
+  if (before)
+    conds.push(
+      sql`(${events.ts}, ${events.signature}, ${events.ixIndex}) < (${before.ts.toISOString()}::timestamptz, ${before.signature}, ${before.ixIndex})`,
+    );
   if (scope.length) {
     const s = scope.length === 1 ? scope[0] : or(...scope);
     if (s) conds.push(s);
@@ -305,6 +315,6 @@ export async function feedEvents(
     .select()
     .from(events)
     .where(and(...conds))
-    .orderBy(desc(events.ts), desc(events.ixIndex))
+    .orderBy(desc(events.ts), desc(events.signature), desc(events.ixIndex))
     .limit(limit);
 }

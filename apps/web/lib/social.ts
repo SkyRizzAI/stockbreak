@@ -1,8 +1,10 @@
 "use client";
 /** Client helpers for social writes: one wallet signature per 24 h session (D033). */
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { api } from "./api";
 import { signedPayload } from "./auth";
+import { useWallet } from "./wallet";
 
 /** Make sure the connected wallet has a live session; asks for one signature if not. */
 export async function ensureSession(qc: QueryClient, wallet: string): Promise<void> {
@@ -33,4 +35,23 @@ export async function socialWrite<T>(
     await ensureSession(qc, wallet);
     return api<T>(path, init);
   }
+}
+
+/**
+ * End the social session when the wallet disconnects or switches accounts, so a
+ * shared browser never keeps posting as the previous wallet (session cookie is httpOnly).
+ */
+export function useSessionFollowsWallet(): void {
+  const qc = useQueryClient();
+  const w = useWallet();
+  const prev = useRef<string | null>(null);
+  useEffect(() => {
+    const was = prev.current;
+    if (w.status === "connecting" || w.status === "reconnecting") return;
+    prev.current = w.address;
+    if (!was || was === w.address) return;
+    void api("/api/auth/session", { method: "DELETE" })
+      .catch(() => {})
+      .finally(() => qc.setQueryData(["session"], { wallet: null }));
+  }, [w.address, w.status, qc]);
 }

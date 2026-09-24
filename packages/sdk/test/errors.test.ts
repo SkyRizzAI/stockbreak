@@ -1,6 +1,6 @@
 /** errors.ts code tables must match the program enums (generated from the IDL). */
 import { expect, test } from "bun:test";
-import { parseFailure } from "../src/errors";
+import { humanizeError, parseFailure, TxFailedError } from "../src/errors";
 import * as vault from "../src/generated/index-vault";
 import * as market from "../src/generated/mock-market";
 import { INDEX_VAULT, MOCK_MARKET } from "../src/pda";
@@ -31,4 +31,27 @@ test("market error codes decode to the right names", () => {
     const logs = [`Program ${MOCK_MARKET} failed: custom program error: 0x${code.toString(16)}`];
     expect(parseFailure(new Error("x"), logs)?.name).toBe(name);
   }
+});
+
+test("bare Custom code without logs is not guessed as a vault error", () => {
+  const e = new Error('Transaction x failed on chain: {"InstructionError":[1,{"Custom":6005}]}');
+  expect(parseFailure(e)).toBeNull();
+  expect(humanizeError(e)).toBe("Transaction failed. Please try again.");
+});
+
+test("on-chain failure with fetched logs names the market error", () => {
+  const e = new TxFailedError('failed: {"InstructionError":[1,{"Custom":6005}]}', "sig", [
+    `Program ${MOCK_MARKET} invoke [1]`,
+    "Program log: AnchorError occurred. Error Code: OracleStale. Error Number: 6005.",
+    `Program ${MOCK_MARKET} failed: custom program error: 0x1775`,
+  ]);
+  const f = parseFailure(e);
+  expect(f?.program).toBe("mock_market");
+  expect(f?.name).toBe("OracleStale");
+});
+
+test("wallet disconnect is recognised", () => {
+  expect(humanizeError(new Error("Dev wallet not connected"))).toBe(
+    "Wallet disconnected. Reconnect and try again.",
+  );
 });

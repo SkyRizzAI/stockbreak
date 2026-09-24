@@ -15,8 +15,8 @@ const KEY: Record<string, keyof IndexSummary> = {
 export function GET(req: NextRequest) {
   return guard(async () => {
     const p = req.nextUrl.searchParams;
-    const board = p.get("board") ?? "indexes";
-    const range = p.get("range") ?? "7d";
+    const board = p.get("board") === "creators" ? "creators" : "indexes";
+    const range = (p.get("range") ?? "7d") in KEY ? (p.get("range") ?? "7d") : "7d";
     const type = p.get("type") ?? "all";
     if (board === "creators") {
       let rows = await creatorsBoard();
@@ -28,7 +28,13 @@ export function GET(req: NextRequest) {
     let rows = await indexSummaries();
     if (type === "ai") rows = rows.filter((r) => r.creatorIsAgent);
     if (type === "human") rows = rows.filter((r) => !r.creatorIsAgent);
-    rows.sort((a, b) => ((b[key] as number | null) ?? -1e9) - ((a[key] as number | null) ?? -1e9));
+    // Ties (e.g. new indexes without history) break by NAV, then address: a stable order.
+    rows.sort(
+      (a, b) =>
+        ((b[key] as number | null) ?? -1e9) - ((a[key] as number | null) ?? -1e9) ||
+        b.navUsd - a.navUsd ||
+        a.pubkey.localeCompare(b.pubkey),
+    );
     const bench = await benchmarkReturns();
     const benchKey = key as "ret24h" | "ret7d" | "ret30d" | "retAll";
     return { board, range, rows, benchmark: bench[benchKey] ?? null };

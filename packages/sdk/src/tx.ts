@@ -34,6 +34,7 @@ import {
   getSetComputeUnitLimitInstruction,
   getSetComputeUnitPriceInstruction,
 } from "@solana-program/compute-budget";
+import { TxFailedError } from "./errors";
 import type { SolanaCtx } from "./rpc";
 
 export interface TxOptions {
@@ -133,10 +134,14 @@ export async function confirmSignature(
     const {
       value: [st],
     } = await ctx.rpc.getSignatureStatuses([sig]).send();
-    if (st?.err)
-      throw new Error(
-        `Transaction ${sig} failed on chain: ${JSON.stringify(st.err, (_k, v) => (typeof v === "bigint" ? v.toString() : v))}`,
+    if (st?.err) {
+      const err = JSON.stringify(st.err, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+      throw new TxFailedError(
+        `Transaction ${sig} failed on chain: ${err}`,
+        sig,
+        await fetchLogs(ctx, sig),
       );
+    }
     if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized") return;
     if (i % 5 === 4) {
       const h = await ctx.rpc.getBlockHeight({ commitment: "confirmed" }).send();
@@ -145,6 +150,30 @@ export async function confirmSignature(
     }
     await new Promise((r) => setTimeout(r, pause));
   }
+}
+
+/**
+ * Program logs of a landed transaction (they carry the failing program id and
+ * the Anchor error name). Best effort: empty when the RPC has not indexed it yet.
+ */
+async function fetchLogs(ctx: SolanaCtx, sig: Signature): Promise<string[]> {
+  for (let i = 0; i < 5; i++) {
+    try {
+      const tx = await ctx.rpc
+        .getTransaction(sig, {
+          commitment: "confirmed",
+          encoding: "json",
+          maxSupportedTransactionVersion: 0,
+        })
+        .send();
+      const logs = tx?.meta?.logMessages;
+      if (logs) return [...logs];
+    } catch {
+      // not available yet
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return [];
 }
 
 /** Send several transactions in order (fresh blockhash each; PLAN §7.2). */

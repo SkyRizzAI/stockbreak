@@ -1,7 +1,7 @@
 "use client";
 /** Mixed feed: post cards and compact on-chain activity rows (D033). */
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { UserLink } from "@/components/data/addr";
 import { Avatar } from "@/components/data/avatar";
 import { RowsSkeleton } from "@/components/data/states";
@@ -22,21 +22,24 @@ function ActivityRow({ a }: { a: ActivityFeedItem }) {
         <span className="size-6 shrink-0 rounded-md border bg-muted" aria-hidden />
       )}
       <p className="min-w-0 flex-1 text-muted-foreground">
+        {/* Events without a wallet (IPO migration, applied updates) read as plain sentences. */}
         {a.author ? (
-          <UserLink
-            wallet={a.author.wallet}
-            handle={a.author.handle}
-            isAgent={a.author.isAgent}
-            className="text-foreground"
-          />
+          <>
+            <UserLink
+              wallet={a.author.wallet}
+              handle={a.author.handle}
+              isAgent={a.author.isAgent}
+              className="text-foreground"
+            />{" "}
+            <span>{sentence(a.summary)}</span>
+          </>
         ) : (
-          <span className="text-foreground">Keeper</span>
-        )}{" "}
-        <span>{sentence(a.summary)}</span>
+          <span>{a.summary}</span>
+        )}
         {a.index ? (
           <>
             {" · "}
-            <Link href={`/i/${a.index.pubkey}`} className="num text-foreground hover:underline">
+            <Link href={`/i/${a.index.pubkey}`} className="mono text-foreground hover:underline">
               {a.index.symbol}
             </Link>
           </>
@@ -46,6 +49,32 @@ function ActivityRow({ a }: { a: ActivityFeedItem }) {
         {ago(a.ts)}
       </time>
     </li>
+  );
+}
+
+/** A run of activity rows; long runs show the first few and fold the rest. */
+function ActivityRun({ rows }: { rows: ActivityFeedItem[] }) {
+  const FOLD = 4;
+  const [open, setOpen] = useState(false);
+  const shown = open || rows.length <= FOLD + 1 ? rows : rows.slice(0, FOLD);
+  return (
+    <div className="flex flex-col">
+      <ul className="divide-y">
+        {shown.map((a) => (
+          <ActivityRow key={a.id} a={a} />
+        ))}
+      </ul>
+      {shown.length < rows.length ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="self-start px-1 py-2 text-xs text-muted-foreground hover:text-foreground"
+          data-testid="activity-more"
+        >
+          Show {rows.length - shown.length} more updates
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -69,7 +98,7 @@ export function FeedList({
   if (loading) return <RowsSkeleton rows={5} className="[&>*]:h-24" />;
   if (error)
     return (
-      <p role="alert" className="rounded-lg border px-4 py-6 text-sm text-down">
+      <p role="alert" className="rounded-2xl border px-4 py-8 md:px-8 text-sm text-down">
         The feed is unavailable right now.
       </p>
     );
@@ -85,11 +114,7 @@ export function FeedList({
     <div className="flex flex-col gap-3" data-testid="feed-list">
       {blocks.map((b) =>
         Array.isArray(b) ? (
-          <ul key={b[0]?.id} className="divide-y">
-            {b.map((a) => (
-              <ActivityRow key={a.id} a={a} />
-            ))}
-          </ul>
+          <ActivityRun key={b[0]?.id} rows={b} />
         ) : b.kind === "post" ? (
           <PostCard key={`p${b.id}`} post={b} />
         ) : null,

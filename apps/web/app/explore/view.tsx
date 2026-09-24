@@ -56,18 +56,19 @@ export function ExploreView() {
     sort,
     type,
     limit: "100",
-    ...(q ? { q } : {}),
+    // The debounced value (URL), not every keystroke.
+    ...(sp.get("q") ? { q: sp.get("q") as string } : {}),
     ...(preipo ? { preipo: "1" } : {}),
     ...(strategy !== "all" ? { strategy } : {}),
   });
   const list = useIndexes(qs.toString());
   const items = list.data?.items ?? [];
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-5 px-4 py-8 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Explore</h1>
+            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Explore</h1>
             <SimulatedBadge />
           </div>
           <p className="text-sm text-muted-foreground">
@@ -150,7 +151,15 @@ export function ExploreView() {
           }
         />
       ) : (
-        <IndexTable rows={items} />
+        <>
+          <IndexTable rows={items} />
+          {list.data && list.data.total > items.length ? (
+            <p className="text-center text-sm text-muted-foreground">
+              Showing the first {items.length} of {list.data.total}. Search or filter to narrow the
+              list.
+            </p>
+          ) : null}
+        </>
       )}
     </div>
   );

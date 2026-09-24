@@ -7,18 +7,8 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 export const alt = "Index card";
 
-const shades = [
-  "#171717",
-  "#404040",
-  "#737373",
-  "#a3a3a3",
-  "#d4d4d4",
-  "#525252",
-  "#8a8a8a",
-  "#262626",
-  "#bdbdbd",
-  "#666666",
-];
+// Four greens of the index mark (refs "Index mark").
+const shades = ["#d6f5e6", "#8fddb8", "#4fb58a", "#2a7a5c"];
 
 export default async function Image({ params }: { params: Promise<{ pubkey: string }> }) {
   const { pubkey } = await params;
@@ -42,7 +32,7 @@ export default async function Image({ params }: { params: Promise<{ pubkey: stri
     // render a generic card
   }
   const total = assets.reduce((a, x) => a + x.targetWeightBps, 0) || 1;
-  const retColor = ret30 === null ? "#737373" : ret30 >= 0 ? "#15803d" : "#b91c1c";
+  const retColor = ret30 === null ? "#9bb3a7" : ret30 >= 0 ? "#4bf0a9" : "#ff8a7a";
   return new ImageResponse(
     <div
       style={{
@@ -50,8 +40,8 @@ export default async function Image({ params }: { params: Promise<{ pubkey: stri
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        background: "#fafafa",
-        color: "#171717",
+        background: "#06140e",
+        color: "#e8f3ec",
         padding: 64,
         fontFamily: "sans-serif",
       }}
@@ -62,13 +52,13 @@ export default async function Image({ params }: { params: Promise<{ pubkey: stri
           justifyContent: "space-between",
           alignItems: "center",
           fontSize: 28,
-          color: "#525252",
+          color: "#9bb3a7",
         }}
       >
         <span>{APP_NAME}</span>
         <span
           style={{
-            border: "2px solid #d4d4d4",
+            border: "2px solid #1c3329",
             borderRadius: 8,
             padding: "4px 14px",
             fontSize: 22,
@@ -79,7 +69,7 @@ export default async function Image({ params }: { params: Promise<{ pubkey: stri
       </div>
       <div style={{ display: "flex", flexDirection: "column", marginTop: 56 }}>
         <span style={{ fontSize: 72, fontWeight: 600, letterSpacing: -2 }}>{name}</span>
-        <span style={{ fontSize: 32, color: "#737373", marginTop: 4 }}>{symbol}</span>
+        <span style={{ fontSize: 32, color: "#9bb3a7", marginTop: 4 }}>{symbol}</span>
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 32, marginTop: 40 }}>
         <span style={{ fontSize: 88, fontWeight: 500 }}>${price.toFixed(4)}</span>
@@ -108,7 +98,7 @@ export default async function Image({ params }: { params: Promise<{ pubkey: stri
           />
         ))}
       </div>
-      <div style={{ display: "flex", gap: 28, marginTop: 16, fontSize: 24, color: "#525252" }}>
+      <div style={{ display: "flex", gap: 28, marginTop: 16, fontSize: 24, color: "#9bb3a7" }}>
         {assets.slice(0, 8).map((a) => (
           <span key={a.symbol}>
             {a.symbol} {(a.targetWeightBps / 100).toFixed(0)}%

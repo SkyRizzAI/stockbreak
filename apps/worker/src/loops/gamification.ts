@@ -1,9 +1,11 @@
 /**
  * XP & badges (PLAN §7.7). Idempotent: every award has a unique (wallet, reason, ref).
  */
+
 import {
   allIndexes,
-  awardBadge,
+  allPositions,
+  awardBadges,
   awardXp,
   BENCHMARK_INDEX,
   eventsOfType,
@@ -11,6 +13,7 @@ import {
   holderCounts,
   snapshotSeries,
 } from "@repo/db";
+import { describeError } from "@repo/sdk";
 import type { WorkerCtx } from "../ctx";
 
 const DAY = 86_400_000;
@@ -67,7 +70,7 @@ export async function gamificationTick(c: WorkerCtx): Promise<number> {
   }
 
   // Holding streaks: +5 per full day held, up to 30 days.
-  const positions = await db.query.positions.findMany();
+  const positions = await allPositions(db);
   for (const p of positions) {
     if (p.shares <= 0n || p.wallet === p.index) continue;
     const days = Math.min(30, Math.floor((Date.now() - p.firstJoinedAt.getTime()) / DAY));
@@ -103,9 +106,22 @@ export async function gamificationTick(c: WorkerCtx): Promise<number> {
     }
   }
 
-  const added = await awardXp(db, xp);
+  // XP and badges are independent: a failure in one must not block the other.
+  let added = 0;
   let newBadges = 0;
-  for (const b of badges) if (await awardBadge(db, b.wallet, b.badge)) newBadges++;
+  const errors: string[] = [];
+  try {
+    added = await awardXp(db, xp);
+  } catch (e) {
+    errors.push(`xp: ${describeError(e)}`);
+  }
+  try {
+    const unique = new Map(badges.map((b) => [`${b.wallet}:${b.badge}`, b]));
+    newBadges = await awardBadges(db, [...unique.values()]);
+  } catch (e) {
+    errors.push(`badges: ${describeError(e)}`);
+  }
   if (added || newBadges) c.log("gamification", `+${added} xp rows, +${newBadges} badges`);
+  if (errors.length) throw new Error(errors.join("; "));
   return added + newBadges;
 }

@@ -18,7 +18,7 @@ export function RowsSkeleton({ rows = 5, className }: { rows?: number; className
 
 export function EmptyState({ title, action }: { title: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed px-4 py-8 text-sm text-muted-foreground">
+    <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed px-4 py-8 text-sm text-muted-foreground">
       <p>{title}</p>
       {action}
     </div>
@@ -29,7 +29,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   return (
     <div
       role="alert"
-      className="flex flex-col items-start gap-3 rounded-lg border px-4 py-6 text-sm"
+      className="flex flex-col items-start gap-3 rounded-2xl border px-4 py-8 md:px-8 text-sm"
     >
       <p className="text-down">{message}</p>
       {onRetry ? (
@@ -51,7 +51,7 @@ export function SimulatedBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded border px-1.5 text-[11px] text-muted-foreground",
+        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] text-muted-foreground",
         className,
       )}
       title="All assets and prices are simulated (localnet/devnet)."
@@ -65,7 +65,7 @@ export function Tag({ children, className }: { children: ReactNode; className?: 
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded border px-1.5 text-[11px] text-muted-foreground",
+        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] text-muted-foreground",
         className,
       )}
     >
@@ -88,7 +88,7 @@ export function Section({
   return (
     <section className={cn("space-y-3", className)}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
+        <h2 className="text-xl font-bold tracking-tight">{title}</h2>
         {action}
       </div>
       {children}
@@ -99,7 +99,7 @@ export function Section({
 /** Key–value row list (settings-style, value right-aligned). */
 export function KV({ rows }: { rows: [ReactNode, ReactNode][] }) {
   return (
-    <dl className="divide-y rounded-lg border">
+    <dl className="divide-y rounded-2xl border">
       {rows.map(([k, v], i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: static rows
         <div key={i} className="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">
@@ -124,7 +124,7 @@ export function NotFoundState({
   cta?: string;
 }) {
   return (
-    <div className="flex flex-col items-start gap-2 rounded-lg border px-4 py-6">
+    <div className="flex flex-col items-start gap-2 rounded-2xl border px-4 py-8 md:px-8">
       <h1 className="text-base font-medium">{title}</h1>
       <p className="text-sm text-muted-foreground">{detail}</p>
       <LinkButton href={href} variant="outline" size="sm" className="mt-2">

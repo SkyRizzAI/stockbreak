@@ -29,8 +29,11 @@ export function PerfChart({
   showBench,
   onBench,
   live,
+  symbol,
 }: {
   pubkey: string;
+  /** Ticker shown in the legend. */
+  symbol: string;
   range: string;
   onRange: (r: string) => void;
   showBench: boolean;
@@ -69,35 +72,50 @@ export function PerfChart({
     }
   }
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <ToggleGroup
-          value={[range]}
-          onValueChange={(v) => (v as string[])[0] && onRange((v as string[])[0] as string)}
-          size="sm"
-          variant="outline"
-          aria-label="Range"
-        >
-          {RANGES.map((r) => (
-            <ToggleGroupItem key={r} value={r} className="px-2.5">
-              {r}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-        <div className="flex items-center gap-2">
-          {synthetic ? (
-            <span className="text-xs text-muted-foreground">Includes simulated history</span>
-          ) : null}
+    <section className="flex flex-col gap-4 rounded-2xl border bg-surface p-4 md:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1.5">
+          <h2 className="text-lg font-bold tracking-tight">
+            {showBench ? "Is it beating SPYx?" : "Share price"}
+          </h2>
+          <span className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-0.5 w-4 rounded-full" style={{ background: tone }} aria-hidden />
+              <span className="mono">{symbol}</span>
+            </span>
+            {showBench ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-4 border-t border-dashed border-muted-foreground" aria-hidden />
+                <span className="mono">SPYx</span>
+              </span>
+            ) : null}
+            {synthetic ? <span>Includes simulated history</span> : null}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
           <Label htmlFor="bench" className="text-xs text-muted-foreground">
             vs SPYx
           </Label>
           <Switch id="bench" checked={showBench} onCheckedChange={onBench} size="sm" />
+          <ToggleGroup
+            value={[range]}
+            onValueChange={(v) => (v as string[])[0] && onRange((v as string[])[0] as string)}
+            size="sm"
+            variant="outline"
+            aria-label="Range"
+          >
+            {RANGES.map((r) => (
+              <ToggleGroupItem key={r} value={r} className="px-2.5">
+                {r}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </div>
       </div>
       {q.isLoading ? (
         <Skeleton className="h-64 w-full" />
       ) : data.length < 2 ? (
-        <div className="flex h-64 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+        <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed text-sm text-muted-foreground">
           Not enough history yet. Snapshots are taken every minute.
         </div>
       ) : (
@@ -181,6 +199,6 @@ export function PerfChart({
           </ComposedChart>
         </ChartContainer>
       )}
-    </div>
+    </section>
   );
 }

@@ -11,7 +11,10 @@ export const dynamic = "force-dynamic";
 export async function GET(_req: Request, ctx: RouteContext<"/api/posts/[id]/comments">) {
   const id = Number((await ctx.params).id);
   if (!Number.isInteger(id)) return fail(400, "Invalid post");
-  return guard(async () => toCommentItems(await listComments(db(), id)));
+  return guard(async () => {
+    if (!(await getPost(db(), id))) return fail(404, "Post not found");
+    return toCommentItems(await listComments(db(), id));
+  });
 }
 
 const Body = z.object({ body: z.string().max(2_000) });

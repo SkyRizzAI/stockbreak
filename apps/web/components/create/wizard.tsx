@@ -1,10 +1,19 @@
 "use client";
 import { CAP_T } from "@repo/config";
-import { createIndexFlow, nextIndexId, sendTx, setManagersIx, vault, zapIn } from "@repo/sdk";
-import type { Address } from "@solana/kit";
+import {
+  createIndexFlow,
+  indexPda,
+  nextIndexId,
+  sendTx,
+  setManagersIx,
+  vault,
+  zapIn,
+} from "@repo/sdk";
+import { type Address, isAddress } from "@solana/kit";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { Check, Lock, LockOpen, Search, X } from "lucide-react";
+import { Check, Lock, LockOpen, Search, TriangleAlert, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +22,7 @@ import { DecimalInput } from "@/components/data/decimal-input";
 import { IndexGlyph, TickerMono } from "@/components/data/glyph";
 import { Price } from "@/components/data/num";
 import { SimulatedBadge } from "@/components/data/states";
+import { LinkButton } from "@/components/link-button";
 import { openConnect, useBalances } from "@/components/shell/wallet-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,11 +31,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, useConfig, usePrices } from "@/lib/api";
+import { ApiError, api, useConfig, usePrices } from "@/lib/api";
 import { signedPayload } from "@/lib/auth";
 import { bps, duration, usd } from "@/lib/format";
 import { chain } from "@/lib/solana";
-import { useRun } from "@/lib/tx";
+import { type Progress, useRun } from "@/lib/tx";
 import type { IndexDetail } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
 
@@ -134,14 +144,39 @@ function normalize(ps: Pick[]): Pick[] {
   return out;
 }
 
+const utf8Len = (s: string) => new TextEncoder().encode(s).length;
+
+/** Cut a string to at most `max` UTF-8 bytes without splitting a character. */
+export function truncateBytes(s: string, max: number): string {
+  let out = "";
+  for (const ch of s) {
+    if (utf8Len(out + ch) > max) break;
+    out += ch;
+  }
+  return out;
+}
+
+const MAX_NAME_BYTES = 32;
+/** MIN_INITIAL_VALUE is $1 of NAV; the zap keeps a slippage buffer and pays the spread. */
+const MIN_FIRST_DEPOSIT = 1.1;
+const DEFAULT_PUBKEY = "11111111111111111111111111111111";
+
+type Stage = "create" | "manager" | "deposit";
+interface Created {
+  index: Address;
+  lookupTable: Address | null;
+}
+
 function StepHeader({
   step,
   onStep,
   done,
+  reachable,
 }: {
   step: number;
   onStep: (n: number) => void;
   done: (n: number) => boolean;
+  reachable: (n: number) => boolean;
 }) {
   return (
     <ol className="flex gap-1 overflow-x-auto" aria-label="Steps">
@@ -149,7 +184,7 @@ function StepHeader({
         <li key={s}>
           <button
             type="button"
-            disabled={i > step && !done(i - 1)}
+            disabled={!reachable(i)}
             onClick={() => onStep(i)}
             aria-current={i === step ? "step" : undefined}
             className={cn(
@@ -174,15 +209,20 @@ function StepHeader({
  * components may already have filled the query cache, so SSR output would not match.
  */
 export function CreateWizard() {
+  const sp = useSearchParams();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  if (!mounted)
-    return (
-      <div className="mx-auto max-w-[1200px] px-4 py-6">
-        <Skeleton className="h-96" />
-      </div>
-    );
-  return <Wizard />;
+  if (!mounted) return <WizardSkeleton />;
+  // A different clone source (or none) starts a fresh wizard.
+  return <Wizard key={sp.get("clone") ?? ""} />;
+}
+
+function WizardSkeleton() {
+  return (
+    <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <Skeleton className="h-96" />
+    </div>
+  );
 }
 
 function Wizard() {
@@ -197,6 +237,8 @@ function Wizard() {
   const parent = useQuery({
     queryKey: ["index", cloneOf],
     enabled: !!cloneOf,
+    // A bad address or missing index will not fix itself; only retry server errors.
+    retry: (n, e) => n < 1 && !(e instanceof ApiError && e.status >= 400 && e.status < 500),
     queryFn: () => api<IndexDetail>(`/api/indexes/${cloneOf}`),
   });
   const agents = useQuery({
@@ -208,6 +250,7 @@ function Wizard() {
   const [step, setStep] = useState(0);
   const [q, setQ] = useState("");
   const [picks, setPicks] = useState<Pick[]>([]);
+  const [prefilled, setPrefilled] = useState(false);
   const [preset, setPreset] = useState("drift");
   const [mode, setMode] = useState<Mode>("Threshold");
   const [drift, setDrift] = useState(5);
@@ -225,6 +268,9 @@ function Wizard() {
   const [manager, setManager] = useState("");
   const [follow, setFollow] = useState(false);
   const [deposit, setDeposit] = useState("1000");
+  // Set once the index exists on chain: the wizard never creates a second one.
+  const [created, setCreated] = useState<Created | null>(null);
+  const [failed, setFailed] = useState<Stage | null>(null);
 
   const assets = useMemo(
     () => (cfg.data?.assets ?? []).filter((a) => a.listed && !a.benchmark),
@@ -232,33 +278,53 @@ function Wizard() {
   );
   const priceOf = (s: string) => prices.data?.find((p) => p.symbol === s)?.price ?? 0;
 
-  // Prefill from a clone source.
+  // The parent's composition, restricted to assets that can still be bought.
+  const parentComp = useMemo(() => {
+    const p = parent.data;
+    if (!p || !cfg.data) return null;
+    const listed = new Set(assets.map((a) => a.mint));
+    const all = p.assets.filter((a) => a.targetWeightBps > 0);
+    const kept = all.filter((a) => listed.has(a.mint));
+    return {
+      picks: kept.length
+        ? normalize(
+            kept.map((a) => ({
+              symbol: a.symbol,
+              mint: a.mint,
+              weight: a.targetWeightBps / 100,
+              locked: false,
+            })),
+          )
+        : [],
+      dropped: all.filter((a) => !listed.has(a.mint)).map((a) => a.symbol),
+    };
+  }, [parent.data, cfg.data, assets]);
+
+  // Prefill from a clone source, once, before the pickers are shown.
   useEffect(() => {
     const p = parent.data;
-    if (!p || picks.length) return;
-    setPicks(
-      p.assets
-        .filter((a) => a.targetWeightBps > 0)
-        .map((a) => ({
-          symbol: a.symbol,
-          mint: a.mint,
-          weight: a.targetWeightBps / 100,
-          locked: false,
-        })),
-    );
+    if (!p || !parentComp || prefilled) return;
+    setPicks(parentComp.picks);
     setMode(p.strategy.mode);
     setPreset(
       p.strategy.mode === "Manual" ? "hold" : p.strategy.mode === "Periodic" ? "periodic" : "drift",
     );
     setDrift(p.strategy.driftThresholdBps / 100 || 5);
-    setPeriodDays(Math.max(1, Math.round(p.strategy.periodSecs / 86400)) || 7);
+    setPeriodDays(p.strategy.periodSecs > 0 ? p.strategy.periodSecs / 86400 : 7);
     setSlippage(p.strategy.maxSlippageBps / 100);
+    setCooldownMin(p.strategy.cooldownSecs / 60);
     setKeeper(p.strategy.allowKeeper);
-    setName(`${p.name} Remix`.slice(0, 32));
+    setMgmt(p.fees.mgmtFeeBps / 100);
+    setEntry(p.fees.entryFeeBps / 100);
+    setExit(p.fees.exitFeeBps / 100);
+    setName(truncateBytes(`${p.name} Remix`, MAX_NAME_BYTES));
     setSymbol(`${p.symbol.slice(0, 7)}R`.toUpperCase());
     setDescription(`Clone of ${p.name}.`);
-  }, [parent.data, picks.length]);
+    setPrefilled(true);
+  }, [parent.data, parentComp, prefilled]);
 
+  // Following: the keeper keeps the weights equal to the parent's, so they are read-only here.
+  const following = !!cloneOf && follow;
   const toggle = (a: { symbol: string; mint: string }) =>
     setPicks((ps) => {
       if (ps.some((p) => p.mint === a.mint))
@@ -284,14 +350,32 @@ function Wizard() {
         ps.map((p, i) => ({ ...p, locked: false, weight: round2(((caps[i] ?? 0) / s) * 100) })),
       );
     });
+  const setFollowing = (v: boolean) => {
+    setFollow(v);
+    if (v && parentComp) setPicks(parentComp.picks);
+  };
 
   const sum = total(picks);
   const weightsOk =
     picks.length > 0 && Math.abs(sum - 100) < 0.005 && picks.every((p) => p.weight > 0);
-  const nameOk = name.trim().length > 0 && name.length <= 32;
+  const nameBytes = utf8Len(name.trim());
+  const nameOk = nameBytes > 0 && nameBytes <= MAX_NAME_BYTES;
   const symbolOk = /^[A-Z0-9]{1,10}$/.test(symbol);
-  const managerOk = manager === "" || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(manager);
-  const depositNum = Number(deposit || "0");
+  const managerError =
+    manager === ""
+      ? null
+      : !isAddress(manager) || manager === DEFAULT_PUBKEY
+        ? "Enter a valid Solana address."
+        : null;
+  const depositText = deposit.trim();
+  const depositNum = depositText === "" ? 0 : Number(depositText);
+  const depositError = !Number.isFinite(depositNum)
+    ? "Enter an amount in USDC."
+    : depositNum > 0 && depositNum < MIN_FIRST_DEPOSIT
+      ? `The first deposit must be at least ${usd(MIN_FIRST_DEPOSIT)}. Leave it empty to deposit later.`
+      : bal.data && depositNum > bal.data.usdc
+        ? "More than your USDC balance."
+        : null;
   const done = (i: number) =>
     i === 0
       ? picks.length > 0
@@ -301,7 +385,9 @@ function Wizard() {
           ? true
           : i === 3
             ? true
-            : nameOk && symbolOk && managerOk;
+            : nameOk && symbolOk && managerError === null;
+  // A step can be opened only when every step before it is complete.
+  const reachable = (i: number) => Array.from({ length: i }, (_, j) => j).every((j) => done(j));
 
   const toBps = (ps: Pick[]) => {
     const out = ps.map((p) => ({ mint: p.mint, weightBps: Math.round(p.weight * 100) }));
@@ -310,20 +396,107 @@ function Wizard() {
     return out;
   };
 
+  /** One progress counter across create, manager and deposit transactions. */
+  const tracker = (onProgress: (p: Progress) => void, plan: Record<Stage, number>) => {
+    const order: Stage[] = ["create", "manager", "deposit"];
+    return (
+      stage: Stage,
+      p: { step: string; done: number; total: number; signature?: Progress["signature"] },
+    ) => {
+      plan[stage] = p.total;
+      const offset = order.slice(0, order.indexOf(stage)).reduce((a, k) => a + plan[k], 0);
+      onProgress({
+        step: p.step,
+        done: offset + p.done,
+        total: order.reduce((a, k) => a + plan[k], 0),
+        signature: p.signature,
+      });
+    };
+  };
+
+  /** Best effort: lookup table + description right after the index exists. */
+  const saveExtras = async (c: Created) => {
+    if (c.lookupTable)
+      await api(`/api/indexes/${c.index}/lookup-table`, {
+        method: "POST",
+        body: JSON.stringify({ lookupTable: c.lookupTable }),
+      }).catch((e: unknown) => console.warn("Lookup table not recorded", e));
+    if (!(description || thesis) || !w.address) return;
+    try {
+      const auth = await signedPayload(w.address, "index-meta");
+      for (let i = 0; ; i++) {
+        try {
+          await api(`/api/indexes/${c.index}/meta`, {
+            method: "POST",
+            body: JSON.stringify({
+              description: description || null,
+              thesis: thesis || null,
+              wallet: w.address,
+              ...auth,
+            }),
+          });
+          break;
+        } catch (e) {
+          if (i >= 2) throw e;
+          await new Promise((r) => setTimeout(r, 1000 * 2 ** i));
+        }
+      }
+    } catch (e) {
+      console.warn("Description not saved", e);
+      toast.message("Index created. You can add a description later from Manage.");
+    }
+  };
+
+  /** Manager and deposit steps. Records the failed stage so a retry resumes there. */
+  const finishStages = async (
+    c: Created,
+    from: "manager" | "deposit",
+    track: ReturnType<typeof tracker>,
+  ) => {
+    const signer = w.signer as NonNullable<typeof w.signer>;
+    const usdc = cfg.data?.assets.find((a) => a.symbol === "USDC")?.mint as Address;
+    const ctx = chain();
+    let stage: Stage = from;
+    try {
+      if (from === "manager" && manager) {
+        const signature = await sendTx(ctx, signer, [
+          await setManagersIx(signer, c.index, [manager as Address]),
+        ]);
+        track("manager", { step: "manager", done: 1, total: 1, signature });
+      }
+      stage = "deposit";
+      if (depositNum > 0)
+        await zapIn(ctx, signer, c.index, usdc, BigInt(Math.round(depositNum * 1e6)), {
+          lookupTable: c.lookupTable,
+          onProgress: (p) => track("deposit", { ...p, step: `deposit-${p.step}` }),
+        });
+    } catch (e) {
+      setFailed(stage);
+      throw e;
+    }
+  };
+
   const create = async () => {
-    if (!w.signer || !w.address || !cfg.data) return;
-    const usdc = cfg.data.assets.find((a) => a.symbol === "USDC")?.mint as Address;
+    // Never create twice: once the index exists only the remaining steps can be retried.
+    if (created || !w.signer || !cfg.data) return;
     const signer = w.signer;
     const res = await run("Create index", async (onProgress) => {
+      const track = tracker(onProgress, {
+        create: picks.length >= 5 ? 3 : 1,
+        manager: manager ? 1 : 0,
+        deposit: depositNum > 0 ? 2 : 0,
+      });
       const c = chain();
+      const indexId = await nextIndexId(c, signer.address);
+      const indexAddress = await indexPda(signer.address, indexId);
       const r = await createIndexFlow(
         c,
         {
           creator: signer,
-          indexId: await nextIndexId(c, signer.address),
+          indexId,
           name: name.trim(),
           symbol,
-          uri: `${window.location.origin}/api/meta/${symbol}`,
+          uri: `${window.location.origin}/api/meta/${indexAddress}`,
           assets: toBps(picks).map((a) => ({ mint: a.mint as Address, weightBps: a.weightBps })),
           fees: {
             mgmtFeeBps: Math.round(mgmt * 100),
@@ -344,55 +517,35 @@ function Wizard() {
             allowKeeper: mode === "Manual" ? false : keeper,
           },
           parent: (cloneOf as Address | null) ?? null,
-          followsParent: !!cloneOf && follow,
+          followsParent: following,
         },
-        (p) =>
-          onProgress({
-            step: p.step,
-            done: p.done,
-            total: p.total + (depositNum > 0 ? 3 : 0),
-            signature: p.signature,
-          }),
+        (p) => track("create", p),
       );
-      if (manager)
-        await sendTx(c, signer, [await setManagersIx(signer, r.index, [manager as Address])]);
-      if (depositNum >= 1) {
-        await zapIn(c, signer, r.index, usdc, BigInt(Math.round(depositNum * 1e6)), {
-          lookupTable: r.lookupTable,
-          onProgress: (p) =>
-            onProgress({
-              step: `deposit-${p.step}`,
-              done: p.done,
-              total: p.total,
-              signature: p.signature,
-            }),
-        });
-      }
+      const made = { index: r.index, lookupTable: r.lookupTable };
+      setCreated(made);
+      await saveExtras(made);
+      await finishStages(made, "manager", track);
       return r;
     });
-    if (!res) return;
-    if (description || thesis) {
-      try {
-        for (let i = 0; i < 20; i++) {
-          const ok = await fetch(`/api/indexes/${res.index}`).then((x) => x.ok);
-          if (ok) break;
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-        const auth = await signedPayload(w.address, "index-meta");
-        await api(`/api/indexes/${res.index}/meta`, {
-          method: "POST",
-          body: JSON.stringify({
-            description: description || null,
-            thesis: thesis || null,
-            wallet: w.address,
-            ...auth,
-          }),
-        });
-      } catch {
-        toast.message("Index created. You can add a description later from Manage.");
-      }
+    if (res) router.push(`/i/${res.index}`);
+  };
+
+  const retry = async () => {
+    if (!created || !failed || failed === "create") return;
+    const from = failed;
+    const res = await run(from === "manager" ? "Finish setup" : "Deposit", async (onProgress) => {
+      const track = tracker(onProgress, {
+        create: 0,
+        manager: from === "manager" && manager ? 1 : 0,
+        deposit: depositNum > 0 ? 2 : 0,
+      });
+      await finishStages(created, from, track);
+      return { ok: true };
+    });
+    if (res) {
+      setFailed(null);
+      router.push(`/i/${created.index}`);
     }
-    router.push(`/i/${res.index}`);
   };
 
   const filtered = assets.filter((a) =>
@@ -400,14 +553,82 @@ function Wizard() {
   );
   const presetDef = PRESETS.find((p) => p.id === preset);
   const revenue = (10_000 * mgmt) / 100;
+  const parentLabel = parent.data?.symbol ?? "the parent";
+
+  if (cloneOf && parent.isError)
+    return (
+      <div className="mx-auto flex max-w-[640px] flex-col gap-3 px-4 py-10 md:px-8">
+        <div
+          role="alert"
+          className="flex flex-col items-start gap-2 rounded-2xl border px-4 py-8 md:px-8"
+        >
+          <h1 className="text-base font-medium">This index could not be loaded</h1>
+          <p className="text-sm text-muted-foreground">
+            {parent.error instanceof ApiError &&
+            parent.error.status !== 404 &&
+            parent.error.status !== 400
+              ? parent.error.message
+              : "There is no index at this address on this network, so it cannot be cloned."}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <LinkButton href="/create" size="sm">
+              Create from scratch
+            </LinkButton>
+            {/* A missing index will not appear on retry; only offer it for server errors. */}
+            {parent.error instanceof ApiError &&
+            (parent.error.status === 404 || parent.error.status === 400) ? null : (
+              <Button variant="outline" size="sm" onClick={() => void parent.refetch()}>
+                Retry
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  if (cloneOf && !prefilled) return <WizardSkeleton />;
+
+  const depositField = (
+    <Field
+      label="First deposit (USDC)"
+      hint={
+        bal.data
+          ? `Balance ${bal.data.usdc.toLocaleString("en-US")} USDC. Minimum ${usd(MIN_FIRST_DEPOSIT)}. Leave empty to deposit later.`
+          : `Minimum ${usd(MIN_FIRST_DEPOSIT)}. Leave empty to deposit later.`
+      }
+    >
+      <Input
+        value={deposit}
+        inputMode="decimal"
+        onChange={(e) => setDeposit(e.target.value.replace(/[^\d.]/g, ""))}
+        className="num"
+        aria-invalid={depositError ? true : undefined}
+        data-testid="index-deposit"
+      />
+      {depositError ? (
+        <span className="text-xs text-warn">
+          {depositError}{" "}
+          {bal.data && depositNum > bal.data.usdc ? (
+            <Link href="/faucet" className="underline underline-offset-2">
+              Get test USDC
+            </Link>
+          ) : null}
+        </span>
+      ) : null}
+    </Field>
+  );
+  const progressLine = progress ? (
+    <p className="num text-sm text-muted-foreground">
+      Step {progress.done} of {progress.total}…
+    </p>
+  ) : null;
 
   const preview = (
-    <div className="flex flex-col gap-4 rounded-xl border p-4">
+    <div className="flex flex-col gap-4 rounded-2xl border p-4">
       <div className="flex items-center gap-3">
         <IndexGlyph pubkey={`${name}${symbol}`} weights={picks.map((p) => p.weight)} size={40} />
         <div className="flex min-w-0 flex-col">
           <span className="truncate font-medium">{name || "Untitled index"}</span>
-          <span className="num text-xs text-muted-foreground">{symbol || "SYMBOL"}</span>
+          <span className="mono text-xs text-muted-foreground">{symbol || "SYMBOL"}</span>
         </div>
         <SimulatedBadge className="ml-auto" />
       </div>
@@ -429,7 +650,7 @@ function Wizard() {
           {mode === "Threshold"
             ? `Drift > ${drift}%`
             : mode === "Periodic"
-              ? `Every ${periodDays}d`
+              ? `Every ${duration(periodDays * 86400)}`
               : "Hold"}
         </dd>
         <dt className="text-muted-foreground">Management fee</dt>
@@ -451,21 +672,92 @@ function Wizard() {
     </div>
   );
 
+  if (created && failed && failed !== "create")
+    return (
+      <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-4 py-8 md:px-8 lg:grid-cols-[1fr_340px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{name.trim()}</h1>
+          <div className="flex flex-col gap-4 rounded-2xl border p-4" data-testid="create-recovery">
+            <div className="flex flex-col gap-1">
+              <p className="flex items-center gap-2 font-medium">
+                <TriangleAlert className="size-4 text-warn" />
+                {failed === "manager"
+                  ? "Index created. The manager and deposit did not complete."
+                  : "Index created. The deposit did not complete."}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {symbol} exists on chain. Retrying continues from where it stopped and does not
+                create another index.
+              </p>
+            </div>
+            {depositField}
+            {progressLine}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="lg"
+                disabled={
+                  busy || depositError !== null || (failed === "deposit" && depositNum <= 0)
+                }
+                onClick={() => void retry()}
+                data-testid="retry-deposit"
+              >
+                {busy
+                  ? "Confirm in wallet…"
+                  : failed === "manager"
+                    ? depositNum > 0
+                      ? "Retry manager and deposit"
+                      : "Retry manager"
+                    : "Retry deposit"}
+              </Button>
+              <LinkButton href={`/i/${created.index}`} variant="outline" size="lg">
+                Open index
+              </LinkButton>
+            </div>
+          </div>
+        </div>
+        <aside>
+          <div className="lg:sticky lg:top-20">{preview}</div>
+        </aside>
+      </div>
+    );
+
+  const followNote = following ? (
+    <p className="rounded-2xl border p-3 text-sm text-muted-foreground">
+      Following {parentLabel}: assets and weights come from the parent and sync automatically. Turn
+      off Follow parent on the Review step to edit them.
+    </p>
+  ) : null;
+  const droppedNote =
+    cloneOf && parentComp?.dropped.length ? (
+      <p className="text-sm text-warn">
+        {parentComp.dropped.join(", ")} {parentComp.dropped.length === 1 ? "is" : "are"} no longer
+        listed and {parentComp.dropped.length === 1 ? "was" : "were"} left out. The other weights
+        were scaled up.
+      </p>
+    ) : null;
+
   return (
-    <div className="mx-auto grid w-full max-w-[1200px] gap-8 px-4 py-6 lg:grid-cols-[1fr_340px]">
+    <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-4 py-8 md:px-8 lg:grid-cols-[1fr_340px]">
       <div className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
             {cloneOf ? `Clone ${parent.data?.name ?? "index"}` : "Create index"}
           </h1>
           <p className="text-sm text-muted-foreground">
             Pick assets, set weights and rules. The vault program enforces them.
           </p>
         </div>
-        <StepHeader step={step} onStep={setStep} done={done} />
+        <StepHeader
+          step={step}
+          onStep={(n) => !busy && setStep(n)}
+          done={done}
+          reachable={(i) => !busy && reachable(i)}
+        />
 
         {step === 0 ? (
           <div className="flex flex-col gap-3">
+            {followNote}
+            {droppedNote}
             <div className="relative">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -476,7 +768,7 @@ function Wizard() {
                 className="h-10 pl-8"
               />
             </div>
-            <ul className="divide-y rounded-lg border" data-testid="asset-list">
+            <ul className="divide-y rounded-2xl border" data-testid="asset-list">
               {filtered.map((a) => {
                 const on = picks.some((p) => p.mint === a.mint);
                 return (
@@ -484,16 +776,17 @@ function Wizard() {
                     <button
                       type="button"
                       onClick={() => toggle(a)}
+                      disabled={following}
                       aria-pressed={on}
                       className={cn(
-                        "flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/50",
-                        on && "bg-muted/60",
+                        "flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
+                        on && "bg-muted/60 disabled:hover:bg-muted/60",
                       )}
                       data-testid={`asset-${a.symbol}`}
                     >
                       <TickerMono symbol={a.symbol} />
                       <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                        <span className="num text-sm">{a.symbol}</span>
+                        <span className="mono text-sm">{a.symbol}</span>
                         <span className="text-xs text-muted-foreground">
                           {a.name}
                           {a.kind === "PreIpo"
@@ -522,16 +815,26 @@ function Wizard() {
 
         {step === 1 ? (
           <div className="flex flex-col gap-4">
+            {followNote}
+            {droppedNote}
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" onClick={equal}>
-                Equal
-              </Button>
-              <Button variant="outline" size="sm" onClick={capLike}>
-                Market-cap-like
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPicks((ps) => normalize(ps))}>
-                Normalize
-              </Button>
+              {following ? null : (
+                <>
+                  <Button variant="outline" size="sm" onClick={equal}>
+                    Equal
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={capLike}>
+                    Market-cap-like
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPicks((ps) => normalize(ps))}
+                  >
+                    Normalize
+                  </Button>
+                </>
+              )}
               <span
                 className={cn(
                   "num ml-auto text-sm",
@@ -544,44 +847,50 @@ function Wizard() {
             </div>
             <ul className="flex flex-col gap-3">
               {picks.map((p) => (
-                <li key={p.mint} className="flex flex-col gap-2 rounded-lg border p-3">
+                <li key={p.mint} className="flex flex-col gap-2 rounded-2xl border p-3">
                   <div className="flex items-center gap-3">
                     <TickerMono symbol={p.symbol} />
-                    <span className="num flex-1 text-sm">{p.symbol}</span>
+                    <span className="mono flex-1 text-sm">{p.symbol}</span>
                     <DecimalInput
                       aria-label={`${p.symbol} weight`}
                       className="num h-9 w-20 text-right"
                       value={p.weight}
+                      disabled={following}
                       onCommit={(v) => setWeight(p.mint, v)}
                       data-testid={`weight-${p.symbol}`}
                     />
                     <span className="text-sm text-muted-foreground">%</span>
-                    <Button
-                      variant="ghost"
-                      size="icon-lg"
-                      aria-label={p.locked ? `Unlock ${p.symbol}` : `Lock ${p.symbol}`}
-                      onClick={() =>
-                        setPicks((ps) =>
-                          ps.map((x) => (x.mint === p.mint ? { ...x, locked: !x.locked } : x)),
-                        )
-                      }
-                    >
-                      {p.locked ? <Lock /> : <LockOpen />}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-lg"
-                      aria-label={`Remove ${p.symbol}`}
-                      onClick={() => toggle(p)}
-                    >
-                      <X />
-                    </Button>
+                    {following ? null : (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon-lg"
+                          aria-label={p.locked ? `Unlock ${p.symbol}` : `Lock ${p.symbol}`}
+                          onClick={() =>
+                            setPicks((ps) =>
+                              ps.map((x) => (x.mint === p.mint ? { ...x, locked: !x.locked } : x)),
+                            )
+                          }
+                        >
+                          {p.locked ? <Lock /> : <LockOpen />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-lg"
+                          aria-label={`Remove ${p.symbol}`}
+                          onClick={() => toggle(p)}
+                        >
+                          <X />
+                        </Button>
+                      </>
+                    )}
                   </div>
                   <Slider
                     value={[p.weight]}
                     min={0}
                     max={100}
                     step={0.5}
+                    disabled={following}
                     onValueChange={(v) => setWeight(p.mint, sliderValue(v, p.weight))}
                     aria-label={`${p.symbol} weight slider`}
                   />
@@ -611,7 +920,7 @@ function Wizard() {
                     setKeeper(p.keeper);
                   }}
                   className={cn(
-                    "flex flex-col gap-1 rounded-lg border p-3 text-left",
+                    "flex flex-col gap-1 rounded-2xl border p-3 text-left",
                     preset === p.id && "border-foreground",
                   )}
                   aria-pressed={preset === p.id}
@@ -621,7 +930,7 @@ function Wizard() {
                 </button>
               ))}
             </div>
-            <details className="rounded-lg border p-3" open={presetDef?.id !== "hold"}>
+            <details className="rounded-2xl border p-3" open={presetDef?.id !== "hold"}>
               <summary className="cursor-pointer text-sm">Advanced</summary>
               <div className="mt-4 flex flex-col gap-5">
                 {mode === "Threshold" ? (
@@ -637,7 +946,7 @@ function Wizard() {
                   </Field>
                 ) : null}
                 {mode === "Periodic" ? (
-                  <Field label="Period" value={`${periodDays} days`}>
+                  <Field label="Period" value={duration(periodDays * 86400)}>
                     <Slider
                       value={[periodDays]}
                       min={1}
@@ -680,7 +989,7 @@ function Wizard() {
         ) : null}
 
         {step === 3 ? (
-          <div className="flex flex-col gap-5 rounded-lg border p-4">
+          <div className="flex flex-col gap-5 rounded-2xl border p-4">
             <Field label="Management fee (to you)" value={`${mgmt}% / yr`}>
               <Slider
                 value={[mgmt]}
@@ -727,15 +1036,36 @@ function Wizard() {
 
         {step === 4 ? (
           <div className="flex flex-col gap-4">
+            {!weightsOk ? (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3 text-sm"
+              >
+                <span className="text-warn">
+                  {picks.length
+                    ? "Weights must add up to 100% and each must be above 0."
+                    : "Pick at least one asset."}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => setStep(picks.length ? 1 : 0)}>
+                  {picks.length ? "Edit weights" : "Pick assets"}
+                </Button>
+              </div>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
               <Field label="Name">
                 <Input
                   value={name}
-                  maxLength={32}
+                  maxLength={MAX_NAME_BYTES}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Chip Leaders"
+                  aria-invalid={nameBytes > MAX_NAME_BYTES ? true : undefined}
                   data-testid="index-name"
                 />
+                {nameBytes > MAX_NAME_BYTES ? (
+                  <span className="num text-xs text-warn">
+                    Too long: {nameBytes} of {MAX_NAME_BYTES} bytes.
+                  </span>
+                ) : null}
               </Field>
               <Field label="Symbol">
                 <Input
@@ -775,6 +1105,7 @@ function Wizard() {
                   onChange={(e) => setManager(e.target.value.trim())}
                   placeholder="Wallet address"
                   className="num"
+                  aria-invalid={managerError ? true : undefined}
                 />
                 {agents.data?.length ? (
                   <div className="flex flex-wrap gap-2">
@@ -790,43 +1121,24 @@ function Wizard() {
                     ))}
                   </div>
                 ) : null}
-                {!managerOk ? (
-                  <span className="text-xs text-warn">Enter a valid Solana address.</span>
-                ) : null}
+                {managerError ? <span className="text-xs text-warn">{managerError}</span> : null}
               </div>
             </Field>
             {cloneOf ? (
-              <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border p-3">
                 <span className="flex flex-col">
                   <Label htmlFor="follow">Follow parent</Label>
                   <span className="text-xs text-muted-foreground">
-                    Weights sync automatically when {parent.data?.symbol ?? "the parent"} changes.
+                    {follow
+                      ? `Uses ${parentLabel}'s weights. The keeper copies every change ${parentLabel} makes.`
+                      : `Off: your weights stay as set. On: weights copy ${parentLabel} and sync automatically.`}
                   </span>
                 </span>
-                <Switch id="follow" checked={follow} onCheckedChange={setFollow} />
+                <Switch id="follow" checked={follow} onCheckedChange={setFollowing} />
               </div>
             ) : null}
-            <Field
-              label="First deposit (USDC)"
-              hint={
-                bal.data
-                  ? `Balance ${bal.data.usdc.toLocaleString("en-US")} USDC. Leave empty to deposit later.`
-                  : "Leave empty to deposit later."
-              }
-            >
-              <Input
-                value={deposit}
-                inputMode="decimal"
-                onChange={(e) => setDeposit(e.target.value.replace(/[^\d.]/g, ""))}
-                className="num"
-                data-testid="index-deposit"
-              />
-            </Field>
-            {progress ? (
-              <p className="text-sm text-muted-foreground">
-                Step {progress.done} of {progress.total}…
-              </p>
-            ) : null}
+            {depositField}
+            {progressLine}
           </div>
         ) : null}
 
@@ -834,7 +1146,7 @@ function Wizard() {
           <Button
             variant="ghost"
             size="lg"
-            disabled={step === 0}
+            disabled={step === 0 || busy}
             onClick={() => setStep((s) => s - 1)}
           >
             Back
@@ -855,15 +1167,13 @@ function Wizard() {
           ) : (
             <Button
               size="lg"
-              disabled={
-                !done(4) || !weightsOk || busy || (bal.data ? depositNum > bal.data.usdc : false)
-              }
+              disabled={!reachable(5) || depositError !== null || busy || !!created}
               onClick={() => void create()}
               data-testid="wizard-create"
             >
               {busy
                 ? "Confirm in wallet…"
-                : depositNum >= 1
+                : depositNum > 0
                   ? `Create and deposit ${usd(depositNum)}`
                   : "Create index"}
             </Button>

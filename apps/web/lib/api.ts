@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type {
   ActivityItem,
   AssetPrice,
+  Benchmark,
   CommentItem,
   CreatorRow,
   FeedPage,
@@ -95,6 +96,7 @@ export const useIndexes = (qs = "") =>
 export const useIndex = (pubkey: string) =>
   useQuery({
     queryKey: ["index", pubkey],
+    enabled: !!pubkey,
     queryFn: () => api<IndexDetail>(`/api/indexes/${pubkey}`),
     refetchInterval: 15_000,
   });
@@ -163,7 +165,7 @@ export const useFeed = (tab: "all" | "following", viewer: string | null) =>
     queryFn: ({ pageParam }) => {
       const qs = new URLSearchParams({ tab, limit: "30" });
       if (viewer) qs.set("viewer", viewer);
-      if (pageParam) qs.set("before", pageParam);
+      if (pageParam) qs.set("cursor", pageParam);
       return api<FeedPage>(`/api/feed?${qs}`);
     },
     getNextPageParam: (last) => last.next ?? undefined,
@@ -171,15 +173,18 @@ export const useFeed = (tab: "all" | "following", viewer: string | null) =>
   });
 
 export const usePosts = (scope: { index?: string; author?: string }, viewer: string | null) =>
-  useQuery({
+  useInfiniteQuery({
     queryKey: ["posts", scope.index ?? "", scope.author ?? "", viewer ?? ""],
-    queryFn: () => {
+    initialPageParam: "",
+    queryFn: ({ pageParam }) => {
       const qs = new URLSearchParams();
       if (scope.index) qs.set("index", scope.index);
       if (scope.author) qs.set("author", scope.author);
       if (viewer) qs.set("viewer", viewer);
-      return api<{ items: PostItem[] }>(`/api/posts?${qs}`);
+      if (pageParam) qs.set("cursor", pageParam);
+      return api<{ items: PostItem[]; next: string | null }>(`/api/posts?${qs}`);
     },
+    getNextPageParam: (last) => last.next ?? undefined,
     refetchInterval: 30_000,
   });
 
@@ -188,4 +193,11 @@ export const useComments = (postId: number, enabled: boolean) =>
     queryKey: ["comments", postId],
     enabled,
     queryFn: () => api<CommentItem[]>(`/api/posts/${postId}/comments`),
+  });
+
+export const useBenchmark = () =>
+  useQuery({
+    queryKey: ["benchmark"],
+    queryFn: () => api<Benchmark>("/api/benchmark"),
+    staleTime: 5 * 60_000,
   });

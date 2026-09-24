@@ -32,7 +32,7 @@ export function PositionsTable({ rows }: { rows: PositionRow[] }) {
               <TableRow key={p.index} data-testid="position-row">
                 <TableCell>
                   <Link href={`/i/${p.index}`} className="hover:underline">
-                    {p.name} <span className="num text-xs text-muted-foreground">{p.symbol}</span>
+                    {p.name} <span className="mono text-xs text-muted-foreground">{p.symbol}</span>
                   </Link>
                 </TableCell>
                 <TableCell className="num text-right">{num(p.shares)}</TableCell>
@@ -57,7 +57,7 @@ export function PositionsTable({ rows }: { rows: PositionRow[] }) {
           </TableBody>
         </Table>
       </div>
-      <ul className="divide-y rounded-lg border md:hidden">
+      <ul className="divide-y rounded-2xl border md:hidden">
         {rows.map((p) => (
           <li key={p.index}>
             <Link href={`/i/${p.index}`} className="flex items-center justify-between px-3 py-3">

@@ -76,6 +76,8 @@ export function registerIntentTools(s: McpServer, ctx: () => Promise<McpCtx>): v
       }),
     },
     safe(async ({ index, shares, toUsdc, wallet: w }) => {
+      const raw = BigInt(Math.floor(shares * 1e6));
+      if (raw <= 0n) throw new Error("shares must be at least 0.000001.");
       const c = await ctx();
       const ref = await resolveIndex(c, index);
       const r = await store(
@@ -83,7 +85,7 @@ export function registerIntentTools(s: McpServer, ctx: () => Promise<McpCtx>): v
         "redeem",
         {
           index: ref.pubkey,
-          shares: String(BigInt(Math.floor(shares * 1e6))),
+          shares: String(raw),
           toUsdc,
           indexName: ref.name,
           indexSymbol: ref.symbol,
@@ -185,15 +187,26 @@ export function registerIntentTools(s: McpServer, ctx: () => Promise<McpCtx>): v
       const c = await ctx();
       const it = await getIntent(c.db, intentId);
       if (!it) throw new Error("Intent not found.");
-      const expired = it.status === "pending" && new Date(it.expiresAt) < new Date();
+      const exp = new Date(it.expiresAt).getTime();
+      // Started flows get an hour of grace past expiry (same rule as the web /sign page).
+      const expired =
+        (it.status === "pending" && exp < Date.now()) ||
+        ((it.status === "in_progress" || it.status === "failed") && exp + 3_600_000 < Date.now());
       const status = expired ? "expired" : it.status;
-      return ok(`Intent ${intentId}: ${status}.`, {
-        kind: it.kind,
-        status,
-        wallet: it.wallet,
-        signatures: it.signatures,
-        expiresAt: new Date(it.expiresAt).toISOString(),
-      });
+      const st = ((it.params ?? {}) as { _state?: { index?: string } })._state;
+      const index =
+        (it.kind === "create_index" || it.kind === "clone") && st?.index ? st.index : null;
+      return ok(
+        `Intent ${intentId}: ${status}.${index && status === "executed" ? ` New index: ${index}.` : ""}`,
+        {
+          kind: it.kind,
+          status,
+          wallet: it.wallet,
+          signatures: it.signatures,
+          expiresAt: new Date(it.expiresAt).toISOString(),
+          result: index ? { index } : null,
+        },
+      );
     }),
   );
 }

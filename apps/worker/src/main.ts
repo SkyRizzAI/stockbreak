@@ -4,7 +4,7 @@
  */
 import { closeDb } from "@repo/db";
 import { describeError } from "@repo/sdk";
-import { createWorkerCtx, type WorkerCtx } from "./ctx";
+import { createWorkerCtx, redact, type WorkerCtx } from "./ctx";
 import { feesTick, followTick, keeperTick, snapshotTick } from "./loops/chain-jobs";
 import { gamificationTick } from "./loops/gamification";
 import { fullResync, indexerTick } from "./loops/indexer";
@@ -34,9 +34,8 @@ async function runLoop(c: WorkerCtx, l: Loop): Promise<void> {
 async function main(): Promise<void> {
   const c = await createWorkerCtx();
   const e = c.env;
-  // Never print RPC API keys (e.g. Helius `?api-key=`).
-  const rpc = e.RPC_URL.replace(/([?&](api[-_]?key|key|token)=)[^&]+/gi, "$1***");
-  c.log("worker", `cluster=${e.CLUSTER} rpc=${rpc} price=${e.PRICE_MODE}`);
+  // Never print RPC API keys (e.g. Helius `?api-key=`); c.log redacts every line too.
+  c.log("worker", `cluster=${e.CLUSTER} rpc=${redact(e.RPC_URL)} price=${e.PRICE_MODE}`);
   const loops: Loop[] = [
     { name: "price", everySecs: e.PRICE_INTERVAL, run: priceTick },
     { name: "indexer", everySecs: e.INDEXER_INTERVAL, run: indexerTick },

@@ -15,6 +15,7 @@ export interface IndexSummary {
   pubkey: string;
   name: string;
   symbol: string;
+  description: string | null;
   creator: string;
   creatorHandle: string | null;
   creatorIsAgent: boolean;
@@ -83,7 +84,6 @@ export interface StrategyJson {
 }
 
 export interface IndexDetail extends IndexSummary {
-  description: string | null;
   thesis: string | null;
   uri: string;
   shareMint: string;
@@ -219,12 +219,18 @@ export interface IndexRef {
   name: string;
 }
 
+/** Index card looks for sharing (D035). */
+export const CARD_VARIANTS = ["mark", "tokens", "chart"] as const;
+export type CardVariant = (typeof CARD_VARIANTS)[number];
+
 export interface PostItem {
   kind: "post";
   id: number;
   ts: string;
   author: AuthorInfo;
-  index: IndexRef | null;
+  /** The attached index, with what its card needs. */
+  index: IndexSummary | null;
+  cardVariant: CardVariant | null;
   body: string;
   likes: number;
   comments: number;
@@ -254,4 +260,10 @@ export interface CommentItem {
   ts: string;
   author: AuthorInfo;
   body: string;
+}
+
+export interface Benchmark {
+  symbol: string;
+  spark: number[];
+  ret30d: number | null;
 }

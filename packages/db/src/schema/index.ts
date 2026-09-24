@@ -213,6 +213,8 @@ export const posts = pgTable(
     id: serial("id").primaryKey(),
     author: text("author").notNull(),
     index: text("index"),
+    /** Index card look when sharing an index (D035): mark | tokens | chart. */
+    cardVariant: text("card_variant"),
     body: text("body").notNull(),
     likeCount: integer("like_count").notNull().default(0),
     commentCount: integer("comment_count").notNull().default(0),

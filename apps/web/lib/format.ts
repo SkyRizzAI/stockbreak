@@ -86,3 +86,15 @@ export function toRaw(input: string, decimals: number): bigint | null {
     BigInt((f + "0".repeat(decimals)).slice(0, decimals) || "0")
   );
 }
+
+/** Largest peak-to-trough fall of a price series, as a fraction (0.12 = 12%). */
+export function maxDrawdown(series: readonly number[]): number | null {
+  if (series.length < 2) return null;
+  let peak = series[0] as number;
+  let worst = 0;
+  for (const v of series) {
+    if (v > peak) peak = v;
+    if (peak > 0) worst = Math.max(worst, (peak - v) / peak);
+  }
+  return worst;
+}

@@ -21,8 +21,8 @@ export function DesktopNav() {
           key={n.href}
           href={n.href}
           className={cn(
-            "rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground",
-            path.startsWith(n.href) && "bg-muted text-foreground",
+            "rounded-lg px-3 py-2 text-[15px] font-medium text-muted-foreground transition-colors hover:text-foreground",
+            path.startsWith(n.href) && "bg-raised font-semibold text-foreground",
           )}
         >
           {n.label}
@@ -42,7 +42,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Main"
-      className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden"
+      className="glass-bar fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       {items.map((n) => {
         const active = n.href === "/" ? path === "/" : path.startsWith(n.href);

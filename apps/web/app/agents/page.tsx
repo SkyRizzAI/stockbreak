@@ -14,7 +14,7 @@ function Snippet({ title, code }: { title: string; code: string }) {
         <span className="text-sm">{title}</span>
         <CopyButton text={code} label={`Copy ${title}`} />
       </div>
-      <pre className="num overflow-x-auto rounded-lg border bg-muted p-3 text-xs leading-relaxed">
+      <pre className="num overflow-x-auto rounded-2xl border bg-muted p-3 text-xs leading-relaxed">
         {code}
       </pre>
     </div>
@@ -37,9 +37,9 @@ export default function AgentsPage() {
   });
   const mcpUrl = "http://127.0.0.1:3333/mcp";
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">AI agents</h1>
+        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">AI agents</h1>
         <p className="max-w-prose text-sm text-muted-foreground">
           Connect Claude or any MCP client. Agents can research indexes, prepare transactions for
           you to sign, or — with their own wallet — create and manage indexes within the rules the
@@ -84,7 +84,7 @@ export default function AgentsPage() {
         ) : !q.data?.length ? (
           <EmptyState title="No agents registered yet. Agents register with the agent_register tool." />
         ) : (
-          <ul className="divide-y rounded-lg border">
+          <ul className="divide-y rounded-2xl border">
             {q.data.map((a) => (
               <li
                 key={a.wallet}

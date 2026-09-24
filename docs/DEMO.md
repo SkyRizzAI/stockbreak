@@ -35,6 +35,7 @@ Buka http://localhost:3000. Seed membuat 3 wallet demo (@alice, @bob, @carol), a
 | 9 | Rebalance | `bun run price -- --asset NVDAx --pct +30` | Dalam ≤ 30 dtk keeper me-rebalance index Threshold yang melewati ambang; Activity "Rebalanced …" |
 | 10 | Social | **Leaderboard** (Indexes/Creators, filter Human/AI), profil `/u/<wallet>`, Follow kreator | XP, level, badge (first_index, first_join, cloned, ai_manager, ipo_survivor) |
 | 10b | Feed | **Feed** → tab All/Following. Tulis post (sekali tanda tangan sign-in per 24 jam), like, komentar, hapus post sendiri. Post dari halaman index (bagian **Discussion**) otomatis menautkan index itu | Post muncul di Feed, Discussion index, dan profil. Following berisi post + aktivitas dari kreator yang di-follow dan index yang Anda pegang. Tanpa join/create index: "Join or create an index first"; spam (link > 2, teks sama, terlalu cepat) ditolak dengan pesan jelas |
+| 10c | Kartu index | Halaman index → **Share → Post to feed as a card** → pilih gaya kartu **Mark / Tokens / Chart** (preview langsung) → tulis komentar → **Post** | Post di feed tampil sebagai kartu: header sesuai gaya, koleksi token + bobot, return 30d + sparkline, TVL, drawdown maks vs SPYx. Home menampilkan kartu **Top creators** |
 | 11 | IPO | `bun run ipo -- --asset OPENAI-pre` | Semua index pemegang bermigrasi ke OPENAIx; timeline "IPO: OPENAI-pre converted to OPENAIx"; badge ipo_survivor |
 | 12 | Fee | `bun run warp -- --days 30` → Manage → **Accrue fees** → **Claim creator fees**; Portfolio → **Clone royalties → Claim**; `bun run claim:platform` untuk treasury | Share fee masuk ke wallet kreator / induk / treasury |
 
@@ -77,10 +78,18 @@ Tunggu `[dev] READY (devnet)`, buka http://localhost:3000. Badge di header harus
 | 9 | Rebalance | Admin: `bun run price -- --asset NVDAx --pct +30 --cluster devnet` | Dalam ≤ 1–2 menit keeper me-rebalance index Threshold yang terpicu; Activity "Rebalanced …". Via agent: lihat "Connect an AI agent" |
 | 10 | Social | **Leaderboard**, profil `/u/<alamat>` (Edit profile menandatangani pesan di Phantom), Follow kreator | XP, level, badge |
 | 10b | Feed | **Feed** → Following/All; post, like, komentar. Phantom meminta satu tanda tangan "Sign in" (bukan transaksi, tanpa biaya) per 24 jam | Sama seperti localnet; posting butuh aktivitas on-chain (join/create index) |
+| 10c | Kartu index | Index → **Share → Post to feed as a card** → pilih Mark/Tokens/Chart → Post | Kartu muncul di feed dengan gaya yang dipilih |
 | 11 | IPO | Admin: `bun run ipo -- --asset OPENAI-pre --cluster devnet` | Index pemegang bermigrasi ke OPENAIx; timeline IPO; badge ipo_survivor |
 | 12 | Fee | Manage → **Accrue fees → Claim creator fees**; Portfolio → **Clone royalties → Claim**; admin `bun run claim:platform -- --cluster devnet` | Share fee bertambah (kecil: di devnet tidak ada `warp`) |
 
 Setelah demo `price`, kembalikan: `bun run price -- --asset NVDAx --pct -23.08 --cluster devnet`.
+
+### Skenario gagal yang layak dicoba (A16)
+- **Tolak transaksi join di Phantom setelah swap disetujui.** Toast menetap: "Swapped into the assets, but the join did not complete". Tekan **Finish join**, atau buka Portfolio → **Loose assets** → **Swap all to USDC**. USDC tidak ditukar dua kali.
+- **Tolak swap balik saat redeem ke USDC.** Pemulihannya sama (Swap to USDC).
+- **Tolak setoran di wizard create.** Panel "Index created. The deposit did not complete." muncul dengan **Retry deposit** / **Open index**, tanpa index ganda.
+- **Tutup tab /sign di tengah, lalu buka lagi link-nya.** Tombol berubah jadi **Continue signing** dan melanjutkan langkah yang tersisa.
+- **Isi setoran pertama $1 pada index kosong.** Ditolak sebelum tanda tangan (minimum $1,10).
 
 ### Verifikasi otomatis sebelum uji manual
 ```bash

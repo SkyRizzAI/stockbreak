@@ -10,7 +10,9 @@ const toggleVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent",
-        outline: "border border-input bg-transparent hover:bg-muted",
+        // Segment of a joined control (refs): muted text, the selected one sits on the Line tone.
+        outline:
+          "border-0 bg-transparent text-muted-foreground hover:bg-raised aria-pressed:bg-border aria-pressed:font-semibold aria-pressed:text-foreground",
       },
       size: {
         default:

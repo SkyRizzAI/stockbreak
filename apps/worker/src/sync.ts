@@ -1,16 +1,17 @@
 /** Chain → DB sync for indexes and positions. */
 import {
-  deletePosition,
   getIndex,
+  getIndexerState,
   getPosition,
   getUser,
+  reconcilePosition,
   upsertIndex,
-  upsertPosition,
 } from "@repo/db";
 import {
   ata,
   fetchMaybeIndex,
   fetchTokenBalances,
+  INDEX_VAULT,
   type IndexState,
   managersOf,
   parentOf,
@@ -18,8 +19,10 @@ import {
   toJson,
   valueIndex,
 } from "@repo/sdk";
-import type { Address } from "@solana/kit";
+import type { Address, Signature } from "@solana/kit";
 import type { WorkerCtx } from "./ctx";
+
+export const PROGRAM = "index_vault";
 
 export function assetsJson(c: WorkerCtx, st: IndexState) {
   return st.assets.map((a) => ({
@@ -63,40 +66,74 @@ export async function syncIndex(c: WorkerCtx, address: string): Promise<IndexSta
   return st;
 }
 
+/** Per-tick cache of live share prices (micro-USD) per index. */
+export class SharePrices {
+  private readonly cache = new Map<string, bigint>();
+  constructor(private readonly c: WorkerCtx) {}
+  async of(index: string, st: IndexState): Promise<bigint> {
+    const hit = this.cache.get(index);
+    if (hit !== undefined) return hit;
+    const p = (await valueIndex(this.c, st)).sharePrice;
+    this.cache.set(index, p);
+    return p;
+  }
+}
+
 /**
- * Refresh one wallet's position from its share balance. `joinedShares` /
- * `burnedShares` adjust cost basis at the current share price.
+ * True when index_vault has no transactions newer than the indexer cursor,
+ * i.e. every vault-driven share change is already reflected in `positions`.
  */
-export async function syncPosition(
+export async function vaultQuiet(
   c: WorkerCtx,
-  wallet: string,
-  index: string,
-  st: IndexState,
-  delta: { joinedShares?: bigint; burnedShares?: bigint } = {},
-): Promise<void> {
-  if (wallet === index) return;
-  const shareAta = await ata(wallet as Address, st.shareMint, TOKEN_PROGRAM);
-  const shares = (await fetchTokenBalances(c, [shareAta])).get(shareAta) ?? 0n;
-  const prev = await getPosition(c.db, wallet, index);
-  if (shares === 0n) {
-    if (prev) await deletePosition(c.db, wallet, index);
-    return;
+  cursor: string | null | undefined,
+): Promise<boolean> {
+  if (!cursor) return false;
+  const res = await c.rpc
+    .getSignaturesForAddress(INDEX_VAULT, {
+      limit: 1,
+      until: cursor as Signature,
+      commitment: "confirmed",
+    })
+    .send();
+  return res.length === 0;
+}
+
+/**
+ * Reconcile stored positions with on-chain share balances (catches plain SPL
+ * transfers, which the indexer does not see). Only runs while the vault is
+ * quiet before and after reading balances, so an unindexed join/redeem is never
+ * mistaken for a transfer. Returns the number of positions changed, or null
+ * when skipped.
+ */
+export async function reconcilePositions(
+  c: WorkerCtx,
+  pairs: { wallet: string; index: string; st: IndexState }[],
+  prices: SharePrices,
+): Promise<number | null> {
+  const todo = pairs.filter((p) => p.wallet !== p.index);
+  if (!todo.length) return 0;
+  const cursor = (await getIndexerState(c.db, PROGRAM))?.lastSignature;
+  if (!(await vaultQuiet(c, cursor))) return null;
+  const atas = await Promise.all(
+    todo.map((p) => ata(p.wallet as Address, p.st.shareMint, TOKEN_PROGRAM)),
+  );
+  const balances = new Map<Address, bigint>();
+  for (let i = 0; i < atas.length; i += 100) {
+    const got = await fetchTokenBalances(c, atas.slice(i, i + 100));
+    for (const [k, v] of got) balances.set(k, v);
   }
-  let cost = prev?.costBasisMicroUsd ?? 0n;
-  if (delta.joinedShares || delta.burnedShares || !prev) {
-    const val = await valueIndex(c, st);
-    if (delta.joinedShares) cost += (delta.joinedShares * val.sharePrice) / 1_000_000n;
-    if (delta.burnedShares && prev && prev.shares > 0n)
-      cost -= (cost * delta.burnedShares) / (prev.shares || 1n);
-    if (!prev && !delta.joinedShares) cost = (shares * val.sharePrice) / 1_000_000n;
+  if (!(await vaultQuiet(c, cursor))) return null;
+  let changed = 0;
+  for (const [i, p] of todo.entries()) {
+    const a = atas[i];
+    if (!a) continue;
+    const chain = balances.get(a) ?? 0n;
+    const prev = await getPosition(c.db, p.wallet, p.index);
+    if ((prev?.shares ?? 0n) === chain) continue;
+    const price = chain > (prev?.shares ?? 0n) ? await prices.of(p.index, p.st) : 0n;
+    if (await reconcilePosition(c.db, p.wallet, p.index, chain, price)) changed++;
   }
-  await upsertPosition(c.db, {
-    wallet,
-    index,
-    shares,
-    costBasisMicroUsd: cost < 0n ? 0n : cost,
-    firstJoinedAt: prev?.firstJoinedAt ?? new Date(),
-  });
+  return changed;
 }
 
 export async function indexKnown(c: WorkerCtx, address: string): Promise<boolean> {

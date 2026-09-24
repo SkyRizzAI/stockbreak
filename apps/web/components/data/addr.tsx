@@ -40,7 +40,7 @@ export function UserLink({
       href={`/u/${wallet}`}
       className={cn("inline-flex items-center gap-1 hover:underline", className)}
     >
-      <span className={handle ? "" : "num"}>{handle ? `@${handle}` : short(wallet)}</span>
+      <span className={handle ? "" : "mono"}>{handle ? `@${handle}` : short(wallet)}</span>
       {isAgent ? (
         <span className="rounded border px-1 text-[10px] leading-4 text-muted-foreground">AI</span>
       ) : null}
@@ -51,7 +51,7 @@ export function UserLink({
 export function Addr({ value, className }: { value: string; className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-1", className)}>
-      <span className="num text-xs">{short(value, 6)}</span>
+      <span className="mono text-xs">{short(value, 6)}</span>
       <CopyButton text={value} label="Copy address" />
     </span>
   );

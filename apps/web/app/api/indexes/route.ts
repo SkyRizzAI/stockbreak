@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { benchmarkReturns, indexSummaries } from "@/lib/server/data";
-import { guard } from "@/lib/server/http";
+import { guard, intParam } from "@/lib/server/http";
 import type { IndexSummary } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,8 @@ export function GET(req: NextRequest) {
     const preIpo = p.get("preipo") === "1";
     const strategy = p.get("strategy");
     const sort = SORTS[p.get("sort") ?? "aum"] ?? SORTS.aum;
-    const limit = Math.min(100, Number(p.get("limit") ?? 50));
-    const page = Math.max(0, Number(p.get("page") ?? 0));
+    const limit = intParam(p.get("limit"), 50, 1, 100);
+    const page = intParam(p.get("page"), 0, 0, 10_000);
     let items = await indexSummaries();
     if (q)
       items = items.filter((i) =>

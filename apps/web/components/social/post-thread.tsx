@@ -1,6 +1,7 @@
 "use client";
 /** Posts scoped to an index (Discussion) or an author (profile). */
 import { EmptyState, RowsSkeleton, Section } from "@/components/data/states";
+import { Button } from "@/components/ui/button";
 import { usePosts } from "@/lib/api";
 import type { IndexRef } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
@@ -18,7 +19,7 @@ export function PostThread({
 }) {
   const w = useWallet();
   const q = usePosts({ index: index?.pubkey, author }, w.address);
-  const posts = q.data?.items ?? [];
+  const posts = q.data?.pages.flatMap((pg) => pg.items) ?? [];
   const canPost = !!index || (author && author === w.address);
   return (
     <Section title={title}>
@@ -33,7 +34,21 @@ export function PostThread({
         ) : posts.length === 0 ? (
           <EmptyState title={index ? `No posts about ${index.symbol} yet.` : "No posts yet."} />
         ) : (
-          posts.map((p) => <PostCard key={p.id} post={p} />)
+          <>
+            {posts.map((p) => (
+              <PostCard key={p.id} post={p} />
+            ))}
+            {q.hasNextPage ? (
+              <Button
+                variant="outline"
+                className="self-center"
+                disabled={q.isFetchingNextPage}
+                onClick={() => void q.fetchNextPage()}
+              >
+                {q.isFetchingNextPage ? "Loading…" : "Load more"}
+              </Button>
+            ) : null}
+          </>
         )}
       </div>
     </Section>

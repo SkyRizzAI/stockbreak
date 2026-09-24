@@ -5,7 +5,9 @@ export interface Slice {
   weightBps: number;
 }
 
-const shade = (i: number, n: number) => 85 - Math.round((i / Math.max(n - 1, 1)) * 60);
+import { MARKS } from "./glyph";
+
+const mark = (i: number) => MARKS[i % MARKS.length] as string;
 
 /** Horizontal stacked allocation bar (§8.3: bars, not pie). */
 export function AllocationBar({
@@ -20,7 +22,7 @@ export function AllocationBar({
   const total = slices.reduce((a, s) => a + s.weightBps, 0) || 1;
   return (
     <div
-      className={cn("flex w-full overflow-hidden rounded-full bg-muted", className)}
+      className={cn("flex w-full gap-1 overflow-hidden rounded-full", className)}
       style={{ height }}
       role="img"
       aria-label="Allocation"
@@ -31,9 +33,9 @@ export function AllocationBar({
           title={`${s.label} ${(s.weightBps / 100).toFixed(1)}%`}
           style={{
             width: `${(s.weightBps / total) * 100}%`,
-            background: `color-mix(in oklch, var(--foreground) ${shade(i, slices.length)}%, var(--background))`,
+            background: mark(i),
           }}
-          className="h-full border-r border-background last:border-r-0"
+          className="h-full rounded-full"
         />
       ))}
     </div>
@@ -48,10 +50,10 @@ export function AllocationLegend({ slices }: { slices: Slice[] }) {
           <span
             className="size-2 rounded-sm"
             style={{
-              background: `color-mix(in oklch, var(--foreground) ${shade(i, slices.length)}%, var(--background))`,
+              background: mark(i),
             }}
           />
-          <span className="num">{s.label}</span>
+          <span className="mono">{s.label}</span>
           <span className="num text-foreground">{(s.weightBps / 100).toFixed(1)}%</span>
         </span>
       ))}

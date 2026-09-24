@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Heart, MessageCircle } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserLink } from "@/components/data/addr";
 import { Avatar } from "@/components/data/avatar";
@@ -16,6 +16,7 @@ import { socialWrite } from "@/lib/social";
 import type { CommentItem, PostItem } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
 import { COMMENT_MAX, errorText } from "./composer";
+import { IndexCard } from "./index-card";
 
 function Stamp({ ts }: { ts: string }) {
   return (
@@ -172,9 +173,12 @@ export function PostCard({ post }: { post: PostItem }) {
     setLikes(post.likes);
   }, [post.liked, post.likes]);
 
+  // Only the latest click's response may update the heart (fast like/unlike toggles).
+  const seq = useRef(0);
   const toggleLike = async () => {
     if (!w.address) return openConnect();
     const next = !liked;
+    const mine = ++seq.current;
     setLiked(next);
     setLikes((n) => n + (next ? 1 : -1));
     try {
@@ -184,8 +188,11 @@ export function PostCard({ post }: { post: PostItem }) {
         `/api/posts/${post.id}/like`,
         { method: "POST", body: JSON.stringify({ like: next }) },
       );
+      if (mine !== seq.current) return;
+      setLiked(r.liked);
       setLikes(r.likes);
     } catch (e) {
+      if (mine !== seq.current) return;
       setLiked(!next);
       setLikes((n) => n + (next ? -1 : 1));
       toast.error(errorText(e));
@@ -193,7 +200,7 @@ export function PostCard({ post }: { post: PostItem }) {
   };
 
   return (
-    <article className="rounded-lg border p-4" data-testid="post-card">
+    <article className="rounded-2xl border p-4" data-testid="post-card">
       <header className="flex items-start gap-3">
         <Avatar seed={post.author.wallet} size={36} />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -206,10 +213,10 @@ export function PostCard({ post }: { post: PostItem }) {
             />
             <Stamp ts={post.ts} />
           </div>
-          {post.index ? (
+          {post.index && !post.cardVariant ? (
             <Link
               href={`/i/${post.index.pubkey}`}
-              className="num mt-0.5 w-fit text-xs text-muted-foreground hover:text-foreground hover:underline"
+              className="mono mt-0.5 w-fit text-xs text-muted-foreground hover:text-foreground hover:underline"
             >
               {post.index.symbol} · {post.index.name}
             </Link>
@@ -241,6 +248,9 @@ export function PostCard({ post }: { post: PostItem }) {
       >
         {post.body}
       </p>
+      {post.index && post.cardVariant ? (
+        <IndexCard index={post.index} variant={post.cardVariant} className="mt-3" />
+      ) : null}
       <footer className="mt-3 flex items-center gap-1">
         <Button
           variant="ghost"
