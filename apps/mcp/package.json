@@ -1,0 +1,24 @@
+{
+  "name": "@repo/mcp",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.1.0",
+    "@types/bun": "latest"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test --pass-with-no-tests",
+    "dev": "bun --watch src/http.ts",
+    "start": "bun src/http.ts",
+    "stdio": "bun src/stdio.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.1.0",
+    "@repo/config": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/sdk": "workspace:*",
+    "@solana/kit": "8.3.0",
+    "zod": "4.6.5"
+  }
+}

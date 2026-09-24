@@ -1,0 +1,29 @@
+skip_local_validator = true
+
+[toolchain]
+anchor_version = "1.2.0"
+solana_version = "4.2.2"
+package_manager = "bun"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+index_vault = "4XaBXM6jZKj3mrQcezjA74ydDEBwiq1amzDtY7ZMc6me"
+mock_market = "9WK7engPUC9pegD4wfJN4tCDPcZGxERVifRNHxsehqX8"
+
+[programs.localnet]
+cpi_probe = "8rHCnkxdvfLUUNJVhviXYiGwCx6hkyT4F1c1BYpqEkNp"
+index_vault = "4XaBXM6jZKj3mrQcezjA74ydDEBwiq1amzDtY7ZMc6me"
+mock_market = "9WK7engPUC9pegD4wfJN4tCDPcZGxERVifRNHxsehqX8"
+
+[provider]
+cluster = "localnet"
+wallet = "~/Projects/oss/stocklana/anchor/../.keys/admin.json"
+
+[scripts]
+test = "cargo test"
+
+[hooks]
+pre_build = "d=$(pwd); while [ ! -f \"$d/Anchor.toml\" ]; do d=$(dirname \"$d\"); done; mkdir -p \"$d/target/deploy\" && cp \"$d\"/keys/*-keypair.json \"$d/target/deploy/\""

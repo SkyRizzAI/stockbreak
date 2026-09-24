@@ -1,0 +1,46 @@
+// Manual v0 pipeline with Address Lookup Tables + simulated CU estimation (Kit 8).
+// Use when a tx exceeds 1232 bytes / 35-ish accounts (e.g. rebalance with many remaining_accounts).
+import {
+  appendTransactionMessageInstructions,
+  assertIsTransactionWithBlockhashLifetime,
+  compressTransactionMessageUsingAddressLookupTables,
+  createSolanaRpc,
+  createSolanaRpcSubscriptions,
+  createTransactionMessage,
+  estimateAndSetResourceLimitsFactory,
+  estimateResourceLimitsFactory,
+  fetchAddressesForLookupTables,
+  fillTransactionMessageProvisoryResourceLimits,
+  getSignatureFromTransaction,
+  pipe,
+  sendAndConfirmTransactionFactory,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransactionMessageWithSigners,
+  type Address,
+  type Instruction,
+  type TransactionSigner,
+} from '@solana/kit';
+
+const rpc = createSolanaRpc('http://127.0.0.1:8899');
+const rpcSubscriptions = createSolanaRpcSubscriptions('ws://127.0.0.1:8900');
+const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+const estimateAndSet = estimateAndSetResourceLimitsFactory(estimateResourceLimitsFactory({ rpc }));
+
+export async function sendV0WithAlt(payer: TransactionSigner, ixs: Instruction[], lookupTables: Address[]) {
+  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+  const altAddresses = await fetchAddressesForLookupTables(lookupTables, rpc);
+  const message = pipe(
+    createTransactionMessage({ version: 0 }),
+    (m) => setTransactionMessageFeePayerSigner(payer, m),
+    (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
+    (m) => appendTransactionMessageInstructions(ixs, m),
+    (m) => fillTransactionMessageProvisoryResourceLimits(m), // provisory SetComputeUnitLimit(0) on v0
+    (m) => compressTransactionMessageUsingAddressLookupTables(m, altAddresses),
+  );
+  const withLimits = await estimateAndSet(message); // simulates, sets CU limit
+  const signed = await signTransactionMessageWithSigners(withLimits);
+  assertIsTransactionWithBlockhashLifetime(signed);
+  await sendAndConfirm(signed, { commitment: 'confirmed' });
+  return getSignatureFromTransaction(signed);
+}

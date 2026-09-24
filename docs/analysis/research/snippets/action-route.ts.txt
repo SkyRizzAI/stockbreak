@@ -1,0 +1,77 @@
+// app/api/actions/join/[index]/route.ts — Solana Action implemented by hand (no @solana/actions).
+import type { ActionGetResponse, ActionPostRequest, ActionPostResponse } from '@solana/actions-spec';
+import {
+  address,
+  appendTransactionMessageInstructions,
+  compileTransaction,
+  createNoopSigner,
+  createSolanaRpc,
+  createTransactionMessage,
+  getBase64EncodedWireTransaction,
+  pipe,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from '@solana/kit';
+import { getTransferSolInstruction } from '@solana-program/system';
+
+const DEVNET_ID = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'; // CAIP-2 genesis-hash id
+const HEADERS: HeadersInit = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
+  'Access-Control-Allow-Headers':
+    'Content-Type, Authorization, Content-Encoding, Accept-Encoding, X-Accept-Action-Version, X-Accept-Blockchain-Ids',
+  'Access-Control-Expose-Headers': 'X-Action-Version, X-Blockchain-Ids',
+  'Content-Type': 'application/json',
+  'X-Action-Version': '2.4',
+  'X-Blockchain-Ids': DEVNET_ID,
+};
+const rpc = createSolanaRpc(process.env.RPC_URL ?? 'https://api.devnet.solana.com');
+
+export const OPTIONS = () => new Response(null, { headers: HEADERS });
+
+export async function GET(req: Request) {
+  const base = new URL(req.url).origin;
+  const body: ActionGetResponse = {
+    type: 'action',
+    icon: `${base}/og/index.png`, // absolute URL, SVG/PNG/WEBP
+    title: 'Join index TECH5 (Simulated)',
+    description: 'Deposit into a simulated tokenized-stock index.',
+    label: 'Join',
+    links: {
+      actions: [
+        { type: 'transaction', label: 'Join 10 USDC', href: `${base}/api/actions/join/TECH5?amount=10` },
+        {
+          type: 'transaction',
+          label: 'Join',
+          href: `${base}/api/actions/join/TECH5?amount={amount}`,
+          parameters: [{ type: 'number', name: 'amount', label: 'USDC amount', required: true, min: 1 }],
+        },
+      ],
+    },
+  };
+  return Response.json(body, { headers: HEADERS });
+}
+
+export async function POST(req: Request) {
+  const { account } = (await req.json()) as ActionPostRequest;
+  let payer;
+  try { payer = address(account); } catch {
+    return Response.json({ message: 'Invalid account' }, { status: 400, headers: HEADERS });
+  }
+  const { value: blockhash } = await rpc.getLatestBlockhash().send();
+  const msg = pipe(
+    createTransactionMessage({ version: 0 }), // blink clients/wallets: v0 or legacy
+    (m) => setTransactionMessageFeePayerSigner(createNoopSigner(payer), m),
+    (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
+    (m) => appendTransactionMessageInstructions(
+      [getTransferSolInstruction({ source: createNoopSigner(payer), destination: payer, amount: 0n })], m),
+  );
+  const tx = compileTransaction(msg); // unsigned; wallet signs as fee payer
+  const body: ActionPostResponse = {
+    type: 'transaction',
+    transaction: getBase64EncodedWireTransaction(tx),
+    message: 'Joined (simulated)',
+    links: { next: { type: 'post', href: '/api/actions/join/TECH5/done' } }, // callback gets {account, signature}
+  };
+  return Response.json(body, { headers: HEADERS });
+}

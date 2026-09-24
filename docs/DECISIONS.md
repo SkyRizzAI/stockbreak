@@ -1,0 +1,151 @@
+# DECISIONS
+
+Format: tanggal · konteks · opsi · pilihan · alasan.
+
+## D001 — 2026-09-24 — Lokasi dokumen
+- Konteks: `CLAUDE.md` merujuk `PLAN.md` di root, tetapi file ada di `docs/plan.md`.
+- Opsi: pindah ke root / tetap di `docs/`.
+- Pilihan: semua dokumen di `docs/` (`docs/PLAN.md`). Root hanya `CLAUDE.md` (wajib dibaca Claude Code dari root) dan `README.md`.
+- Alasan: permintaan user; root tetap bersih.
+
+## D002 — 2026-09-24 — Keypair & config Solana CLI lokal project
+- Konteks: config global Solana user menunjuk devnet + keypair project lain (`idimon`).
+- Pilihan: keypair project di `.keys/` (admin, keeper, agent; di-gitignore) + config CLI lokal `.keys/solana-cli.yml` (RPC localhost, keypair admin, commitment confirmed). Semua perintah memakai `-C .keys/solana-cli.yml` atau `-u`/`-k` eksplisit. Config global tidak pernah diubah.
+- Pubkey: admin `9e1LHfXQpD8DbzbCpoAvrRbnhWA9cKsVJzQ35nCYhECh`, keeper `6FhZsUu9gjVjriEW6EgeQvCcnQtjpKgdA2CJ3HJquw2Z`, agent `CB7HjcsHajTn4SQgRh2uUskTDXduMbyqz7L6LgfQiTLG`.
+- Alasan: permintaan user; mencegah transaksi tak sengaja ke jaringan/wallet lain.
+
+## D003 — 2026-09-24 — Port Postgres 5434
+- Konteks: 5432 dan 5433 dipakai container project lain milik user.
+- Pilihan: host port 5434 → container 5432.
+- Alasan: hindari bentrok ketika project lain berjalan bersamaan.
+
+## D004 — 2026-09-24 — Toolchain
+- Pilihan: Agave/Solana CLI 4.2.2 (channel stable Anza; GitHub "Latest" 4.3.0 belum di channel stable), Anchor 1.2.0 (bukan 2.0.0-rc.1), Surfpool 1.6.0, Rust 1.98.1, platform-tools v1.54.
+- Alasan: versi stabil terbaru; RC tidak dipakai.
+
+## D005 — 2026-09-24 — Jaringan uji manual
+- Konteks: docs Phantom Testnet Mode hanya menyebut Solana Devnet & Testnet; localnet tidak resmi didukung.
+- Pilihan: tahap 1 localnet (test otomatis, Dev Wallet); tahap 2 devnet sebagai target uji manual Phantom oleh user di akhir (PLAN §11.4). `bun run dev:devnet` menjalankan worker/web/MCP lokal menunjuk devnet.
+- Alasan: keputusan user; Phantom perlu devnet untuk simulasi & saldo.
+
+## D006 — 2026-09-24 — Faucet SOL devnet dari wallet admin
+- Konteks: airdrop publik devnet sering rate limit.
+- Pilihan: `POST /api/faucet/sol` mentransfer 0.2 SOL dari admin, batas per wallet/24 jam (`faucet_claims`) + cap harian. User mendanai admin sebelum eksekusi.
+- Alasan: uji manual tidak boleh terhambat faucet publik.
+
+## D007 — 2026-09-24 — Timelock devnet 120 detik
+- Konteks: PLAN awal 3600 detik; uji manual propose → apply akan menunggu 1 jam.
+- Pilihan: `timelock_secs` devnet 120, localnet 0.
+- Alasan: uji manual praktis; tetap mendemokan timelock.
+
+## D008 — 2026-09-24 — Nama produk
+- Pilihan: `NEXT_PUBLIC_APP_NAME=Stocklana` (default).
+- Alasan: keputusan user.
+
+## D009 — 2026-09-24 — Cache tool di luar repo diizinkan
+- Pilihan: `~/.cargo`, `~/.cache/solana`, `~/.bun/install/cache`, `~/Library/Caches/ms-playwright`, volume OrbStack boleh ditulis.
+- Alasan: keputusan user; lokasi standar tool.
+
+## D010 — 2026-09-24 — API key eksternal dari `.env.test`
+- Konteks: user menyediakan `.env.test` (di-gitignore) berisi JUPITER_API_KEY, FINNHUB_API_KEY, HELIUS_RPC_URL (mainnet, api-key yang sama berlaku di devnet), FALLBACK_RPC_URL, OPENROUTER_*.
+- Verifikasi 2026-09-24: Jupiter Price v3 HTTP 200; Finnhub quote HTTP 200; Helius `getHealth` ok di mainnet & devnet.
+- Pilihan: `bun run setup` menyalin nilai relevan ke `.env` (tanpa mencetak nilai). Harga: Jupiter v3 (`stockData.price` lalu `usdPrice`) → Finnhub quote (saham US) → random walk dari harga terakhir/fixture; Pyth Hermes hanya bila `PYTH_API_KEY` diisi (Hermes wajib key sejak 2026-08-26). Devnet RPC = Helius devnet (`DEVNET_RPC_URL`), fallback `https://api.devnet.solana.com`. `MAINNET_READ_RPC_URL` = Helius mainnet (hanya baca). OpenRouter tidak dipakai (LLM di luar app, K7).
+- Alasan: gratis, sudah terverifikasi, mengurangi rate limit.
+
+## D011 — 2026-09-24 — Versi transaksi v0
+- Konteks: Kit 8 bisa membangun v1 (SIMD-0385), tetapi Phantom/Solflare/Backpack belum bisa menandatangani v1, dan v1 tidak mendukung ALT.
+- Pilihan: semua transaksi `version: 0` (+ALT bila perlu).
+- Alasan: kompatibilitas wallet untuk uji manual Phantom.
+
+## D012 — 2026-09-24 — Script tidak bergantung pada symlink Solana global
+- Konteks: `~/.local/share/solana/install/active_release` sempat berubah kembali ke 3.1.10 oleh proses di luar project (kemungkinan project lain milik user).
+- Pilihan: semua script project menaruh `~/.local/share/solana/install/releases/4.2.2/solana-release/bin` di depan PATH (via helper `scripts/lib/toolchain.ts`); `bun run setup` memverifikasi versi. Symlink global tidak diubah oleh script.
+- Alasan: project stabil tanpa mengganggu project lain yang mungkin butuh 3.1.10.
+
+## D013 — 2026-09-24 — Validator dev: Surfpool langsung
+- Konteks: `anchor localnet` panic tanpa TTY dan meninggalkan Surfpool yatim; runbook Surfpool auto-deploy memakai `~/.config/solana/id.json`.
+- Pilihan: `surfpool start --offline --no-deploy --no-tui` + `anchor program deploy --provider.wallet ../.keys/admin.json --program-keypair keys/<prog>-keypair.json`. Fallback: `solana-test-validator` (tanpa time travel; `warp` exit 0 dengan pesan).
+
+## D014 — 2026-09-24 — LiteSVM 0.16 + Rust 1.98.1
+- Konteks: template `anchor init` litesvm 0.10 gagal memuat program SBPFv3; rust 1.89 gagal compile LiteSVM 0.16.
+- Pilihan: litesvm 0.16.0, solana-message 4.2.4, solana-transaction 4.1.5, solana-signer 3.0.1, solana-keypair 3.1.2; `anchor/rust-toolchain.toml` = 1.98.1.
+
+## D015 — 2026-09-24 — `drizzle.config.ts` ditulis tangan
+- Konteks: drizzle-kit tidak punya command init (pengecualian aturan §0.3).
+- Pilihan: tulis `packages/db/drizzle.config.ts` dengan `defineConfig` sesuai docs resmi.
+
+## D016 — 2026-09-24 — TypeScript 5.9.x dipin
+- Konteks: npm `latest` = TypeScript 7.0.2 (dipakai create-turbo/bun init/create-playwright), create-next-app menulis `^5`.
+- Pilihan: satu versi `typescript@5.9.x` di root; hapus devDependency typescript di paket nested bila bentrok.
+
+## D017 — 2026-09-24 — Playwright generator memakai npm
+- Konteks: create-playwright selalu memasang dengan npm.
+- Pilihan: jalankan generator, hapus `package-lock.json` & `node_modules` hasilnya, lalu `bun install` dari root.
+
+## D018 — 2026-09-24 — Kesiapan Phantom diverifikasi tidak langsung
+- Konteks: Phantom (ekstensi) tidak praktis diotomasi.
+- Pilihan: `bun run verify:devnet` → setiap tx alur §1.2 dicek v0, ≤ 1232 byte, `simulateTransaction` devnet sukses; plus Playwright smoke devnet dengan Dev Wallet. Uji manual Phantom dilakukan user di akhir mengikuti `docs/DEMO.md`.
+
+## D019 — 2026-09-24 — Agent tidak mengelola git
+- Konteks: user mengelola git sendiri; `user.name` sengaja tidak diset.
+- Pilihan: agent tidak menjalankan `git commit`/`push`/`config` (baca saja). Pengganti commit: entri Log di `docs/STATUS.md` per fase. Prosedur Contract change dicatat sebagai entri `contract:` di Log.
+- Alasan: keputusan user.
+
+## D020 — 2026-09-24 — Dua program dipertahankan
+- Pilihan: `index_vault` dan `mock_market` terpisah (K5).
+- Alasan: keputusan user; mock terisolasi, batas CPI ke program market sah bisa dites, bisa diganti adapter nyata. Penghematan biaya bila digabung kecil (~0,5–1 SOL).
+
+## D021 — 2026-09-24 — create-turbo template `basic`
+- Konteks: `-e with-biome` gagal ("Could not locate an example") karena API GitHub rate limit (HTTP 403).
+- Pilihan: template default (`basic`), lalu hapus apps/docs, apps/web, packages/{ui,eslint-config}, prettier; Biome dipasang via `bunx biome init`.
+
+## D022 — 2026-09-24 — docker-compose.yml ditulis tangan
+- Konteks: tidak ada generator resmi untuk compose Postgres (`docker init` untuk Dockerfile aplikasi).
+- Pilihan: compose minimal sesuai docs image resmi (PG18 volume `/var/lib/postgresql`, port 5434).
+
+## D023 — 2026-09-24 — Penyempurnaan & pembekuan kontrak (P2)
+- Konteks: spesifikasi §5 perlu detail agar bisa diimplementasikan & aman (asal `AssetKind`, parameter oracle mock, bentuk argumen).
+- Pilihan: lihat PLAN §5.5. Ringkas: kind aset dari feed market (bukan input kreator), `ConfigParams`, `AssetInput`, share token SPL klasik, `emit!`, crate math bersama, error tambahan, kolom DB tambahan.
+- Alasan: mencegah kreator menandai aset pre-IPO sebagai saham (atau sebaliknya), satu sumber math untuk program/SDK, log event cukup kecil untuk tx rebalance.
+
+## D024 — 2026-09-24 — Codama: rename akun `Index` → `IndexAccount`
+- Konteks: akun Anchor `Index` menghasilkan `accounts/index.ts` & `pdas/index.ts` yang menimpa barrel `index.ts`.
+- Pilihan: visitor `updateAccountsVisitor` di `codama.json` (`index` → `indexAccount`); di TS dipakai `fetchIndexAccount`, `findIndexAccountPda`. Nama akun on-chain tidak berubah.
+
+## D025 — 2026-09-24 — Satu config Codama, dua script
+- Pilihan: `codama.json` di root dengan script `vault` & `market`, IDL dipilih via `-i`; output `packages/sdk/src/generated/{index-vault,mock-market}`; `kitImportStrategy: rootOnly`; `@codama/nodes-from-anchor` dipasang eksplisit (CLI menawarkan `yarn add`).
+
+## D026 — 2026-09-24 — Skenario harga +30% (bukan +20%)
+- Konteks: dengan pemicu `max_i |w_i − t_i| > 5%` (PLAN §6.3), kenaikan harga satu aset sebesar p menggeser bobotnya Δ = p·w(1−w)/(1+p·w); untuk p = 20% maksimum Δ ≈ 4,5% (w = 50%) → tidak pernah melewati 5%.
+- Pilihan: skenario §11.1 no. 6 dan gate P7 memakai `--pct +30` (w = 40% → Δ ≈ 5,8%). Aturan program tidak diubah.
+- Tambahan (P10): index A di `e2e/tests/dod.spec.ts` memegang 4 aset × 25% → +30% hanya Δ ≈ 5,2% (garis batas, bisa gagal setelah rebalance agent). Test memakai `+40` (Δ ≈ 6,8%). Rumus yang sama dicatat di DEMO.
+
+## D027 — 2026-09-24 — Database terpisah per cluster
+- Konteks: localnet & devnet memakai Postgres lokal yang sama; reset localnet (chain baru) tidak boleh menghapus data devnet dan data tidak boleh tercampur.
+- Pilihan: `app` (localnet), `app_devnet` (dev:devnet mengganti `DATABASE_URL`), `app_test` (test). `bun run setup` membuat & memigrasi ketiganya.
+
+## D028 — 2026-09-24 — Tool baca MCP memakai JSON API web
+- Konteks: NAV live, return, benchmark, leaderboard, dan portfolio dihitung di `apps/web/lib/server/data.ts` (DB + SDK). Menduplikasi logika itu di `apps/mcp` berisiko angka berbeda dengan UI.
+- Pilihan: tool baca MCP memanggil route JSON web (`WEB_URL`). Intent tetap ditulis lewat `packages/db`; tool `agent_*` dan `simulate_rebalance` memakai `packages/sdk` langsung. Web adalah bagian stack `bun run dev`, dan link sign intent memang butuh web.
+
+## D029 — 2026-09-24 — `planPair` diekstrak di SDK; update parsial di MCP
+- `packages/sdk/src/rebalance.ts`: perhitungan pasangan swap + prediksi drift diekstrak menjadi `planPair` agar `simulate_rebalance`/`agent_rebalance` bisa menilai swap custom dengan math yang sama dengan program. `planRebalance` memakainya; tes SDK tetap 56/56.
+- `agent_propose_update` memakai skema patch tanpa default (Zod 4 tetap menerapkan default di dalam `.optional()`), field kosong mempertahankan nilai on-chain.
+
+## D030 — 2026-09-24 — Deploy devnet dengan panjang program pas (tanpa 2×)
+- Konteks: saldo admin devnet 15 SOL; alokasi 2× ukuran program menghabiskan ±11 SOL.
+- Pilihan: `solana program deploy` Agave 4.2 (default `max-len` = ukuran program, upgrade auto-extend) lewat `bun run deploy:devnet`; biaya permanen ±5,7 SOL. Deploy idempoten (byte on-chain dibandingkan dengan build lokal). Detail di A13.
+
+## D031 — 2026-09-24 — RPC Helius untuk devnet, juga di klien lokal
+- Konteks: RPC publik devnet rate-limited; `dev:devnet` memakai `DEVNET_RPC_URL` (Helius, key dari `.env.test`) untuk worker, MCP, dan `NEXT_PUBLIC_RPC_URL`.
+- Konsekuensi: key ikut dalam bundle web yang berjalan di localhost user. Diterima karena app tidak di-host publik; bila web di-host, ganti dengan RPC tanpa key atau proxy server. Dicatat di DEMO.md. Log script menyamarkan key.
+
+## D032 — 2026-09-24 — Klaim fee platform lewat script admin
+- Konteks: DoD §11.1 no. 9 mensyaratkan treasury platform bisa klaim; tidak ada UI admin.
+- Pilihan: `bun run claim:platform [-- --index X] [--cluster devnet]`: accrue lalu `claim_fees(Platform)` untuk semua index dengan saldo owed.
+
+## D033 — 2026-09-24 — Contract: feed sosial (post, like, komentar) + sesi sign-in + anti-spam
+- Konteks: permintaan user/mentor: feed dengan tab Following, aktivitas, post sederhana, like, komentar sederhana, dengan anti-spam.
+- Pilihan: tabel baru `auth_sessions`, `posts`, `post_likes`, `post_comments` (PLAN §7.3). Aturan feed & anti-spam di PLAN §7.7.
+- Sesi: sign-in sekali per 24 jam (cookie httpOnly) agar like/komentar tidak memunculkan popup wallet setiap klik. Aksi profil/follow tetap memakai tanda tangan per aksi (tidak berubah).
+- Tidak ada perubahan program on-chain maupun tool MCP.

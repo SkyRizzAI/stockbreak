@@ -1,0 +1,39 @@
+{
+  "idl": "anchor/target/idl/index_vault.json",
+  "before": [
+    {
+      "from": "codama#updateAccountsVisitor",
+      "args": [
+        {
+          "index": {
+            "name": "indexAccount"
+          }
+        }
+      ]
+    }
+  ],
+  "scripts": {
+    "vault": {
+      "from": "@codama/renderers-js",
+      "args": [
+        "packages/sdk",
+        {
+          "generatedFolder": "src/generated/index-vault",
+          "kitImportStrategy": "rootOnly",
+          "syncPackageJson": false
+        }
+      ]
+    },
+    "market": {
+      "from": "@codama/renderers-js",
+      "args": [
+        "packages/sdk",
+        {
+          "generatedFolder": "src/generated/mock-market",
+          "kitImportStrategy": "rootOnly",
+          "syncPackageJson": false
+        }
+      ]
+    }
+  }
+}

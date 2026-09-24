@@ -1,0 +1,186 @@
+"use client";
+import Link from "next/link";
+import { TickerMono } from "@/components/data/glyph";
+import { Delta, Price, toneOf } from "@/components/data/num";
+import { ErrorState, RowsSkeleton, Section, SimulatedBadge } from "@/components/data/states";
+import { IndexTable } from "@/components/index/index-table";
+import { LinkButton } from "@/components/link-button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useActivity, useIndexes, usePrices } from "@/lib/api";
+import { ago, pct } from "@/lib/format";
+import type { IndexSummary } from "@/lib/types";
+
+function median(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? (s[m] as number) : ((s[m - 1] as number) + (s[m] as number)) / 2;
+}
+
+function TickerStrip() {
+  const prices = usePrices();
+  if (prices.isLoading) return <Skeleton className="h-14 w-full" />;
+  if (prices.isError)
+    return <ErrorState message="Prices are unavailable." onRetry={() => void prices.refetch()} />;
+  const list = (prices.data ?? []).filter((p) => p.symbol !== "USDC");
+  if (!list.length) return null;
+  return (
+    <div className="-mx-4 overflow-x-auto px-4">
+      <ul className="flex min-w-max gap-2" aria-label="Asset prices">
+        {list.map((p) => (
+          <li key={p.symbol} className="flex items-center gap-2 rounded-lg border px-3 py-2">
+            <TickerMono symbol={p.symbol} />
+            <span className="flex flex-col leading-tight">
+              <span className="num text-xs text-muted-foreground">{p.symbol}</span>
+              <span className="flex items-baseline gap-2">
+                <Price value={p.price} className="text-sm" />
+                <Delta value={p.change24h} className="text-xs" />
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function HumanVsAi({ rows }: { rows: IndexSummary[] }) {
+  const human = rows.filter((r) => !r.creatorIsAgent);
+  const ai = rows.filter((r) => r.creatorIsAgent);
+  const cell = (label: string, list: IndexSummary[]) => {
+    const m = median(list.map((r) => r.ret7d).filter((x): x is number => x !== null));
+    const best = [...list].sort((a, b) => (b.ret7d ?? -1) - (a.ret7d ?? -1))[0];
+    return (
+      <div className="flex flex-col gap-1 rounded-lg border p-4">
+        <span className="text-xs text-muted-foreground">{label} · median 7d</span>
+        <span className={`num text-2xl ${toneOf(m, 0.00005)}`}>{pct(m)}</span>
+        <span className="text-xs text-muted-foreground">
+          {list.length} indexes
+          {best ? (
+            <>
+              {" · best "}
+              <Link href={`/i/${best.pubkey}`} className="text-foreground hover:underline">
+                {best.symbol}
+              </Link>
+            </>
+          ) : null}
+        </span>
+      </div>
+    );
+  };
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {cell("Human", human)}
+      {cell("AI", ai)}
+    </div>
+  );
+}
+
+export default function Home() {
+  const list = useIndexes("sort=aum&limit=100");
+  const act = useActivity();
+  const rows = list.data?.items ?? [];
+  const clones = rows
+    .filter((r) => r.parent)
+    .sort((a, b) => (b.ret7d ?? -1) - (a.ret7d ?? -1))
+    .slice(0, 4);
+  return (
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Markets</h1>
+            <SimulatedBadge />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Tokenized stock indexes. Create one, share it, or join someone else&apos;s.
+          </p>
+        </div>
+        <LinkButton href="/create" size="lg">
+          Create index
+        </LinkButton>
+      </div>
+
+      <TickerStrip />
+
+      <Section
+        title="Top indexes"
+        action={
+          <Link href="/explore" className="text-sm text-muted-foreground hover:text-foreground">
+            View all
+          </Link>
+        }
+      >
+        {list.isLoading ? (
+          <RowsSkeleton rows={6} />
+        ) : list.isError ? (
+          <ErrorState message="Could not load indexes." onRetry={() => void list.refetch()} />
+        ) : rows.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+            No indexes yet. Create the first one.
+          </p>
+        ) : (
+          <IndexTable rows={rows.slice(0, 6)} />
+        )}
+      </Section>
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        <Section title="Trending clones">
+          {list.isLoading ? (
+            <RowsSkeleton rows={3} />
+          ) : clones.length ? (
+            <IndexTable rows={clones} compact />
+          ) : (
+            <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+              No clones yet. Open any index and press Clone.
+            </p>
+          )}
+        </Section>
+        <div className="flex flex-col gap-8">
+          <Section
+            title="Human vs AI"
+            action={
+              <Link
+                href="/leaderboard"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Leaderboard
+              </Link>
+            }
+          >
+            {list.isLoading ? <Skeleton className="h-28" /> : <HumanVsAi rows={rows} />}
+          </Section>
+          <Section title="Latest activity">
+            {act.isLoading ? (
+              <RowsSkeleton rows={4} />
+            ) : (act.data ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing yet.</p>
+            ) : (
+              <ul className="divide-y rounded-lg border text-sm">
+                {(act.data ?? []).slice(0, 6).map((a) => (
+                  <li
+                    key={`${a.signature}-${a.type}`}
+                    className="flex items-center justify-between gap-3 px-3 py-2"
+                  >
+                    <span className="min-w-0 truncate">
+                      {a.index ? (
+                        <Link
+                          href={`/i/${a.index}`}
+                          className="num mr-2 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          {a.indexSymbol}
+                        </Link>
+                      ) : null}
+                      {a.summary}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{ago(a.ts)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}

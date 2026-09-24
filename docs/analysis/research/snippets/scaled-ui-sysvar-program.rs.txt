@@ -1,0 +1,132 @@
+use anchor_lang::prelude::*;
+use anchor_lang::solana_program::instruction::{get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT};
+use anchor_lang::solana_program::program::invoke_signed;
+use anchor_lang::system_program::{create_account, CreateAccount};
+use anchor_spl::token_2022::spl_token_2022::{
+    extension::{
+        scaled_ui_amount::{instruction as scaled_ix, ScaledUiAmountConfig},
+        ExtensionType,
+    },
+    state::Mint as MintState,
+};
+use anchor_spl::token_interface::{
+    get_mint_extension_data, initialize_mint2, InitializeMint2, Mint, TokenInterface,
+};
+use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
+
+declare_id!("3b7u3NH3xAByZyDX4QcgY7QfCAqb4VGRuX5t3y7vSNHr");
+
+pub const AUTH_SEED: &[u8] = b"auth";
+
+#[program]
+pub mod second {
+    use super::*;
+
+    pub fn create_scaled_mint(ctx: Context<CreateScaledMint>, multiplier: f64) -> Result<()> {
+        let space = ExtensionType::try_calculate_account_len::<MintState>(&[
+            ExtensionType::ScaledUiAmount,
+        ])?;
+        let lamports = Rent::get()?.minimum_balance(space);
+        create_account(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                CreateAccount {
+                    from: ctx.accounts.payer.to_account_info(),
+                    to: ctx.accounts.mint.to_account_info(),
+                },
+            ),
+            lamports,
+            space as u64,
+            ctx.accounts.token_program.key,
+        )?;
+        let auth = ctx.accounts.authority.key();
+        let ix = scaled_ix::initialize(
+            ctx.accounts.token_program.key,
+            ctx.accounts.mint.key,
+            Some(auth),
+            multiplier,
+        )?;
+        invoke_signed(
+            &ix,
+            &[ctx.accounts.mint.to_account_info()],
+            &[],
+        )?;
+        initialize_mint2(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                InitializeMint2 { mint: ctx.accounts.mint.to_account_info() },
+            ),
+            6,
+            &auth,
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn update_multiplier(ctx: Context<UpdateMultiplier>, multiplier: f64, effective_ts: i64) -> Result<()> {
+        let ix = scaled_ix::update_multiplier(
+            ctx.accounts.token_program.key,
+            &ctx.accounts.mint.key(),
+            &ctx.accounts.authority.key(),
+            &[],
+            multiplier,
+            effective_ts,
+        )?;
+        let bump = ctx.bumps.authority;
+        invoke_signed(
+            &ix,
+            &[ctx.accounts.mint.to_account_info(), ctx.accounts.authority.to_account_info()],
+            &[&[AUTH_SEED, &[bump]]],
+        )?;
+        Ok(())
+    }
+
+    pub fn check_multiplier(ctx: Context<CheckMultiplier>, expected: f64) -> Result<()> {
+        let cfg = get_mint_extension_data::<ScaledUiAmountConfig>(&ctx.accounts.mint.to_account_info())?;
+        let now = Clock::get()?.unix_timestamp;
+        let eff_ts: i64 = cfg.new_multiplier_effective_timestamp.into();
+        let m: f64 = if now >= eff_ts { cfg.new_multiplier.into() } else { cfg.multiplier.into() };
+        msg!("effective multiplier {} (now {}, eff_ts {})", m, now, eff_ts);
+        require!(m == expected, ErrorCode::ConstraintRaw);
+
+        // top-level + instructions sysvar introspection
+        require_eq!(get_stack_height(), TRANSACTION_LEVEL_STACK_HEIGHT, ErrorCode::ConstraintRaw);
+        let ixs = ctx.accounts.instructions.to_account_info();
+        let cur = load_current_index_checked(&ixs)? as usize;
+        let me = load_instruction_at_checked(cur, &ixs)?;
+        require_keys_eq!(me.program_id, crate::ID);
+        msg!("current index {}", cur);
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct CreateScaledMint<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut)]
+    pub mint: Signer<'info>,
+    /// CHECK: PDA authority
+    #[account(seeds = [AUTH_SEED], bump)]
+    pub authority: UncheckedAccount<'info>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateMultiplier<'info> {
+    #[account(mut, mint::token_program = token_program)]
+    pub mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: PDA authority
+    #[account(seeds = [AUTH_SEED], bump)]
+    pub authority: UncheckedAccount<'info>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+#[derive(Accounts)]
+pub struct CheckMultiplier<'info> {
+    pub mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: address-checked instructions sysvar
+    #[account(address = solana_instructions_sysvar::ID)]
+    pub instructions: UncheckedAccount<'info>,
+}

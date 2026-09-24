@@ -1,0 +1,20 @@
+{
+  "name": "@repo/scripts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "@repo/config": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/sdk": "workspace:*",
+    "@solana-program/system": "0.15.0",
+    "@solana-program/token": "0.17.0",
+    "@solana/kit": "8.3.0",
+    "drizzle-orm": "0.45.3"
+  }
+}

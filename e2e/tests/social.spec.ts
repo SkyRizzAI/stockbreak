@@ -1,0 +1,102 @@
+/** Social feed (D033): posts, likes, comments, Following tab and anti-spam rules. */
+import { expect, test } from "@playwright/test";
+import { connectDevWallet, expectRun, firstIndexHref } from "./helpers";
+
+test.describe.configure({ mode: "serial" });
+
+test("writes need a session and a same-site origin", async ({ request }) => {
+  const anon = await request.post("/api/posts", { data: { body: "hello" } });
+  expect(anon.status()).toBe(401);
+  const cross = await request.post("/api/posts", {
+    data: { body: "hello" },
+    headers: { origin: "https://evil.example" },
+  });
+  expect(cross.status()).toBe(403);
+});
+
+test("a wallet without on-chain activity cannot post", async ({ page }) => {
+  await page.goto("/feed");
+  await connectDevWallet(page);
+  await page.getByTestId("post-input").fill("gm, first post before joining anything");
+  await page.getByTestId("post-submit").click();
+  await expect(page.getByTestId("post-error")).toContainText("Join or create an index first");
+});
+
+test("post, like, comment, anti-spam, delete", async ({ page }) => {
+  await page.goto("/");
+  await connectDevWallet(page);
+  // Skin in the game: join an index first.
+  await page.goto(await firstIndexHref(page, "MAG4"));
+  await page.getByTestId("join-amount").fill("20");
+  await page.getByTestId("join-submit").click();
+  await expectRun(page, /Joined MAG4/);
+
+  // Post from the index Discussion: attached to MAG4, one signature signs the session in.
+  const body = `E2E thesis ${Date.now()}: megacaps + a pre-IPO sleeve.`;
+  await expect
+    .poll(
+      async () => {
+        await page.getByTestId("post-input").fill(body);
+        await page.getByTestId("post-submit").click();
+        await page.waitForTimeout(1500);
+        const err = page.getByTestId("post-error");
+        return (await err.count()) ? ((await err.textContent()) ?? "") : "";
+      },
+      { timeout: 60_000, intervals: [3_000] },
+    )
+    // the indexer may need a few seconds to record the Joined event
+    .not.toContain("Join or create an index first");
+  const card = page.getByTestId("post-card").filter({ hasText: body });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("MAG4");
+
+  // Anti-spam: same text again, and a second post inside the 20 s gap.
+  await page.getByTestId("post-input").fill(body);
+  await page.getByTestId("post-submit").click();
+  await expect(page.getByTestId("post-error")).toContainText(/Slow down|already posted/);
+
+  // Like / unlike (optimistic, persisted).
+  await card.getByTestId("like-button").click();
+  await expect(card.getByTestId("like-count")).toHaveText("1");
+  await page.reload();
+  const again = page.getByTestId("post-card").filter({ hasText: body });
+  await expect(again.getByTestId("like-button")).toHaveAttribute("aria-pressed", "true");
+
+  // Comment.
+  await again.getByTestId("comments-button").click();
+  await again.getByTestId("comment-input").fill("Following this one.");
+  await again.getByTestId("comment-submit").click();
+  await expect(again.getByTestId("comment-list")).toContainText("Following this one.");
+
+  // Too many links is rejected before any rate rule.
+  await again.getByTestId("comment-input").fill("see https://a.x https://b.x https://c.x");
+  await again.getByTestId("comment-submit").click();
+  await expect(again.getByRole("alert")).toContainText("At most 2 links");
+
+  // Visible in the global feed, then deleted by its author.
+  await page.goto("/feed");
+  await page.getByTestId("tab-all").click();
+  const inFeed = page.getByTestId("post-card").filter({ hasText: body });
+  await expect(inFeed).toBeVisible();
+  await inFeed.getByRole("button", { name: "Delete post" }).click();
+  await inFeed.getByRole("button", { name: "Delete post" }).click();
+  await expect(page.getByTestId("post-card").filter({ hasText: body })).toHaveCount(0);
+});
+
+test("Following tab shows followed creators and seeded posts render", async ({ page }) => {
+  await page.goto("/feed");
+  await page.getByTestId("tab-all").click();
+  await expect(page.getByTestId("post-card").first()).toBeVisible();
+  await expect(page.getByTestId("feed-list")).toContainText("@alice");
+
+  await connectDevWallet(page);
+  const res = await page.request.get("/api/leaderboard?board=creators");
+  const { rows } = (await res.json()) as { rows: { wallet: string; handle: string | null }[] };
+  const alice = rows.find((r) => r.handle === "alice")?.wallet as string;
+  await page.goto(`/u/${alice}`);
+  await page.getByTestId("follow").click();
+  await expect(page.getByTestId("follow")).toHaveText("Following");
+  await page.goto("/feed");
+  await page.getByTestId("tab-following").click();
+  await expect(page.getByTestId("feed-list")).toContainText("@alice", { timeout: 30_000 });
+});

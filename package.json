@@ -1,0 +1,53 @@
+{
+  "name": "stocklana",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "bun scripts/dev.ts",
+    "dev:devnet": "bun scripts/dev.ts --cluster devnet",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "turbo run check-types",
+    "test:program": "bun scripts/test-program.ts",
+    "test:ts": "turbo run test",
+    "e2e": "bun scripts/e2e.ts",
+    "e2e:visual": "bun scripts/e2e.ts --visual",
+    "setup": "bun scripts/setup.ts",
+    "seed": "bun scripts/seed.ts",
+    "price": "bun scripts/price.ts",
+    "warp": "bun scripts/warp.ts",
+    "ipo": "bun scripts/ipo.ts",
+    "claim:platform": "bun scripts/claim-platform.ts",
+    "codegen": "bun scripts/codegen.ts",
+    "verify": "bun scripts/verify.ts",
+    "verify:devnet": "bun scripts/verify-devnet.ts",
+    "deploy:devnet": "bun scripts/deploy-devnet.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@codama/nodes-from-anchor": "1.5.6",
+    "@codama/renderers-js": "2.5.0",
+    "codama": "1.11.0",
+    "turbo": "^2.11.3",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.2"
+    }
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "e2e",
+    "scripts"
+  ],
+  "trustedDependencies": [
+    "sharp",
+    "unrs-resolver"
+  ]
+}

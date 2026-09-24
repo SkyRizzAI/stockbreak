@@ -1,0 +1,43 @@
+{
+  "cluster": "devnet",
+  "indexVaultProgram": "4XaBXM6jZKj3mrQcezjA74ydDEBwiq1amzDtY7ZMc6me",
+  "mockMarketProgram": "9WK7engPUC9pegD4wfJN4tCDPcZGxERVifRNHxsehqX8",
+  "market": "8DNJ7ENUqsRb5RTCqJnWe2J9iJHK2KLvpHj5pXGP7VAa",
+  "config": "9Pgxo72uzavbqFJXJtsevdDkRZXccJQt2U68PC1YqPXh",
+  "admin": "9e1LHfXQpD8DbzbCpoAvrRbnhWA9cKsVJzQ35nCYhECh",
+  "keeper": "6FhZsUu9gjVjriEW6EgeQvCcnQtjpKgdA2CJ3HJquw2Z",
+  "agent": "CB7HjcsHajTn4SQgRh2uUskTDXduMbyqz7L6LgfQiTLG",
+  "platformTreasury": "9e1LHfXQpD8DbzbCpoAvrRbnhWA9cKsVJzQ35nCYhECh",
+  "mints": {
+    "USDC": "EdpbkqmSLqwb74Gn9so9VRRZhoTiR9gy8U32635NQCqp",
+    "AAPLx": "AbJTqtVykMJGdSx5NHGMRZ3rB8TF3KHKoWx3CwjZQTS8",
+    "NVDAx": "4dDq6vmx8U28sWMETdUZuDtvD7TBdD3W9UT7GHv1eMHw",
+    "TSLAx": "8Y11wHeWGspg2YFwoP5YgbSQJobP1E42hAxMV4kkSf14",
+    "MSFTx": "6SwuSqgmYi2mGjt6cAk9B3gr7vGg3BHzMsXwuCy6CEtY",
+    "GOOGLx": "B6m3DVLTCu5yP6ETLSCQh8F5wqXXZbymoXAkWjGUkoWH",
+    "AMZNx": "7F6mBq15C1DgH5dAiEKKm71CUq6wYcPF19vcinWJtAcz",
+    "METAx": "3dTLovdVcyS8BZ92DyxjjvoK8kbVgetNTmVj1KzCbUU7",
+    "SPYx": "GnrywGDdp58C2RhXthKXjLFyQu3eyQ73t1y8HhMHgVWx",
+    "SPACEX-pre": "HkBqPZnDMMaRUKmeFkQd8pG2tGkQYK8YDpcRQdw5RHJ4",
+    "OPENAI-pre": "8sT9qKVrZ39kafRfNpo1buEL8Pe9QTH89KsT36kkBWyU",
+    "ANTHRP-pre": "GXzKnGR3scZ2TbbW2ti5ZLo3ZNtfxQzAnC7LbDXAVzfH",
+    "ANDURL-pre": "CRGZM5VeNcXAeurrY82Qs9d54HEUessUrpmKUMwHfVhz"
+  },
+  "feeds": {
+    "USDC": "sT9z3EkTPM6BNY1nbcyhn1oqN1XkUxajThQMzuDVU3e",
+    "AAPLx": "FFEsj8xeWz7ga9KvJu9CwkSampCzndumjMjpRqh73arj",
+    "NVDAx": "DjuvB6J6eKonsGA5JKzfJQhL9GuT3SHNMLvw3Hru6MaA",
+    "TSLAx": "usVLFWnreJXgVtgeAytyoq7iCXyddQkBwXA622w86kb",
+    "MSFTx": "9TYMvMzbbgQ2ivUBBvxQYyvsMZ5fnZdarxhgozJe4NWp",
+    "GOOGLx": "6LBbu9jCFBy26qrRAxhx577zU6EPtP4nYVKMogHjANFw",
+    "AMZNx": "DV1rnJyWQLhjf9ZGQnGzL1LCqPNgLVCptPZhgQ5FNyxu",
+    "METAx": "CeWc45UMer8yLWaVEzCZ9Zf7oTLrdQW6r3D6yMFHTPes",
+    "SPYx": "3kkDPnLSPbPt6uoye2zpBUVVSq2CDMDtWrauRW2FHqVW",
+    "SPACEX-pre": "43Sk5VkjuHMsXqhmWH8DK7e7HZLCPkuJB23U7oYpYTzj",
+    "OPENAI-pre": "A4Bb6KP3RYvqUVyuCK3jAcbJtjcNFAjYqdSmeBcUdnBs",
+    "ANTHRP-pre": "61nejifigy3FaYzUeoFazr8FX1XazkQZsz1BfUyffuhU",
+    "ANDURL-pre": "GytHUbssPkPCcqyGTeEns4k3YPutkyizz1u93Ygc1aX8"
+  },
+  "ipos": {},
+  "updatedAt": "2026-09-23T22:49:53.186Z"
+}

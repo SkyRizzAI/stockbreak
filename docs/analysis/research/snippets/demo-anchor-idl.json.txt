@@ -1,0 +1,20 @@
+{
+  "address": "Demo111111111111111111111111111111111111111",
+  "metadata": {"name": "demo", "version": "0.1.0", "spec": "0.1.0", "description": "x"},
+  "instructions": [
+    {"name": "initialize", "discriminator": [175,175,109,31,13,152,155,237],
+     "accounts": [
+       {"name": "authority", "writable": true, "signer": true},
+       {"name": "counter", "writable": true, "pda": {"seeds": [{"kind": "const", "value": [99,111,117,110,116,101,114]}, {"kind": "account", "path": "authority"}]}},
+       {"name": "system_program", "address": "11111111111111111111111111111111"}
+     ],
+     "args": [{"name": "start", "type": "u64"}]}
+  ],
+  "accounts": [{"name": "Counter", "discriminator": [255,176,4,245,188,253,124,25]}],
+  "events": [{"name": "CounterInitialized", "discriminator": [1,2,3,4,5,6,7,8]}],
+  "errors": [{"code": 6000, "name": "Overflow", "msg": "Math overflow"}],
+  "types": [
+    {"name": "Counter", "type": {"kind": "struct", "fields": [{"name": "authority", "type": "pubkey"}, {"name": "count", "type": "u64"}]}},
+    {"name": "CounterInitialized", "type": {"kind": "struct", "fields": [{"name": "authority", "type": "pubkey"}, {"name": "start", "type": "u64"}]}}
+  ]
+}

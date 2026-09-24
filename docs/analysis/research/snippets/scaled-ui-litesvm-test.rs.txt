@@ -1,0 +1,64 @@
+use {
+    anchor_lang::{prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas},
+    litesvm::LiteSVM,
+    solana_keypair::Keypair,
+    solana_message::{Message, VersionedMessage},
+    solana_signer::Signer,
+    solana_transaction::versioned::VersionedTransaction,
+};
+
+const T22: Pubkey = anchor_spl::token_2022::ID;
+
+fn send(svm: &mut LiteSVM, ixs: &[Instruction], signers: &[&Keypair]) -> Result<Vec<String>, String> {
+    let bh = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(ixs, Some(&signers[0].pubkey()), &bh);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
+    match svm.send_transaction(tx) {
+        Ok(m) => Ok(m.logs),
+        Err(e) => Err(format!("{:?} {:?}", e.err, e.meta.logs)),
+    }
+}
+
+#[test]
+fn scaled_ui_amount_flow() {
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!(concat!(env!("CARGO_TARGET_TMPDIR"), "/../deploy/second.so"));
+    svm.add_program(second::id(), bytes).unwrap();
+    let payer = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
+    let mint = Keypair::new();
+    let (auth, _) = Pubkey::find_program_address(&[second::AUTH_SEED], &second::id());
+
+    let ix = Instruction::new_with_bytes(
+        second::id(),
+        &second::instruction::CreateScaledMint { multiplier: 1.0 }.data(),
+        second::accounts::CreateScaledMint {
+            payer: payer.pubkey(), mint: mint.pubkey(), authority: auth,
+            token_program: T22, system_program: anchor_lang::system_program::ID,
+        }.to_account_metas(None),
+    );
+    send(&mut svm, &[ix], &[&payer, &mint]).expect("create");
+
+    let check = |m: f64| Instruction::new_with_bytes(
+        second::id(),
+        &second::instruction::CheckMultiplier { expected: m }.data(),
+        second::accounts::CheckMultiplier { mint: mint.pubkey(), instructions: solana_instructions_sysvar::ID }.to_account_metas(None),
+    );
+    send(&mut svm, &[check(1.0)], &[&payer]).expect("check 1.0");
+
+    let mut clock = svm.get_sysvar::<anchor_lang::prelude::Clock>();
+    let eff = clock.unix_timestamp + 86_400;
+    let ix = Instruction::new_with_bytes(
+        second::id(),
+        &second::instruction::UpdateMultiplier { multiplier: 2.5, effective_ts: eff }.data(),
+        second::accounts::UpdateMultiplier { mint: mint.pubkey(), authority: auth, token_program: T22 }.to_account_metas(None),
+    );
+    send(&mut svm, &[ix], &[&payer]).expect("update");
+    svm.expire_blockhash();
+    send(&mut svm, &[check(1.0)], &[&payer]).expect("still 1.0 before eff");
+    clock.unix_timestamp = eff + 1;
+    svm.set_sysvar(&clock);
+    svm.expire_blockhash();
+    let logs = send(&mut svm, &[check(2.5)], &[&payer]).expect("2.5 after warp");
+    println!("{logs:#?}");
+}

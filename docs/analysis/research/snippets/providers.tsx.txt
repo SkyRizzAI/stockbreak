@@ -1,0 +1,34 @@
+'use client';
+// app/providers.tsx — one Kit client for the app, wallet via Wallet Standard.
+import { createClient } from '@solana/kit';
+import { solanaRpc } from '@solana/kit-plugin-rpc';
+import { walletSigner } from '@solana/kit-plugin-wallet';
+import { ClientProvider } from '@solana/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState, type ReactNode } from 'react';
+import { registerDevWallet } from './dev-wallet';
+import { demoProgram } from '../clients/demo/src/generated';
+
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? 'http://127.0.0.1:8899';
+// Wallet-side chain id. Use 'solana:devnet' for localnet too if the target wallet
+// does not advertise 'solana:localnet' (plugin filters wallets by chain).
+const CHAIN = (process.env.NEXT_PUBLIC_WALLET_CHAIN ?? 'solana:localnet') as 'solana:localnet' | 'solana:devnet';
+
+if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DEV_WALLET === '1') registerDevWallet();
+
+export const client = createClient()
+  .use(walletSigner({ chain: CHAIN, storageKey: 'stocklana:wallet' }))
+  // v0 (not v1): Phantom/Solflare/Backpack don't sign v1 yet; v0 also keeps ALTs available.
+  .use(solanaRpc({ rpcUrl: RPC_URL, transactionConfig: { version: 0 } }))
+  .use(demoProgram());
+
+export type AppClient = typeof client;
+
+export function Providers({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ClientProvider client={client}>{children}</ClientProvider>
+    </QueryClientProvider>
+  );
+}

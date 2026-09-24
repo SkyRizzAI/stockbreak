@@ -1,0 +1,473 @@
+[
+  {
+    "fn": "mult_fp_from_f64",
+    "m": 1.0,
+    "out": "1000000000000"
+  },
+  {
+    "fn": "mult_fp_from_f64",
+    "m": 2.5,
+    "out": "2500000000000"
+  },
+  {
+    "fn": "mult_fp_from_f64",
+    "m": 0.333333333333,
+    "out": "333333333333"
+  },
+  {
+    "fn": "mult_fp_from_f64",
+    "m": 1.000000000001,
+    "out": "1000000000001"
+  },
+  {
+    "fn": "mult_fp_from_f64",
+    "m": 17.25,
+    "out": "17250000000000"
+  },
+  {
+    "fn": "mult_fp_from_f64",
+    "m": 0.5,
+    "out": "500000000000"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "value_usd",
+    "mult_fp": "1000000000000",
+    "out": "235120000",
+    "price": "23512000000",
+    "raw": "100000000"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "raw_for_value",
+    "mult_fp": "1000000000000",
+    "out": "100000000",
+    "price": "23512000000",
+    "value": "235120000"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "value_usd",
+    "mult_fp": "1000000000000",
+    "out": "218944442",
+    "price": "17734500000",
+    "raw": "123456789"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "raw_for_value",
+    "mult_fp": "1000000000000",
+    "out": "123456788",
+    "price": "17734500000",
+    "value": "218944442"
+  },
+  {
+    "decimals": 6,
+    "expo": -8,
+    "fn": "value_usd",
+    "mult_fp": "1000000000000",
+    "out": "5000000",
+    "price": "100000000",
+    "raw": "5000000"
+  },
+  {
+    "decimals": 6,
+    "expo": -8,
+    "fn": "raw_for_value",
+    "mult_fp": "1000000000000",
+    "out": "5000000",
+    "price": "100000000",
+    "value": "5000000"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "value_usd",
+    "mult_fp": "2500000000000",
+    "out": "275000000",
+    "price": "4400000000",
+    "raw": "250000000"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "raw_for_value",
+    "mult_fp": "2500000000000",
+    "out": "250000000",
+    "price": "4400000000",
+    "value": "275000000"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "value_usd",
+    "mult_fp": "1000000000000",
+    "out": "13",
+    "price": "132100000000",
+    "raw": "1"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "raw_for_value",
+    "mult_fp": "1000000000000",
+    "out": "0",
+    "price": "132100000000",
+    "value": "13"
+  },
+  {
+    "decimals": 8,
+    "expo": -5,
+    "fn": "value_usd",
+    "mult_fp": "1000000000000",
+    "out": "4999999999",
+    "price": "50000",
+    "raw": "999999999999"
+  },
+  {
+    "decimals": 8,
+    "expo": -5,
+    "fn": "raw_for_value",
+    "mult_fp": "1000000000000",
+    "out": "999999999800",
+    "price": "50000",
+    "value": "4999999999"
+  },
+  {
+    "decimals": 6,
+    "expo": -5,
+    "fn": "value_usd",
+    "mult_fp": "1000000000000",
+    "out": "6999300",
+    "price": "99990",
+    "raw": "7000000"
+  },
+  {
+    "decimals": 6,
+    "expo": -5,
+    "fn": "raw_for_value",
+    "mult_fp": "1000000000000",
+    "out": "7000000",
+    "price": "99990",
+    "value": "6999300"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "value_usd",
+    "mult_fp": "500000000000",
+    "out": "30000000000000",
+    "price": "60000000000",
+    "raw": "10000000000000"
+  },
+  {
+    "decimals": 8,
+    "expo": -8,
+    "fn": "raw_for_value",
+    "mult_fp": "500000000000",
+    "out": "10000000000000",
+    "price": "60000000000",
+    "value": "30000000000000"
+  },
+  {
+    "amount_in": "1000000000",
+    "fn": "swap_out",
+    "in_decimals": 6,
+    "in_expo": -8,
+    "in_mult_fp": "1000000000000",
+    "in_price": "100000000",
+    "out": "424038788",
+    "out_decimals": 8,
+    "out_expo": -8,
+    "out_mult_fp": "1000000000000",
+    "out_price": "23512000000",
+    "spread_bps": 30
+  },
+  {
+    "amount_in": "100000000",
+    "fn": "swap_out",
+    "in_decimals": 8,
+    "in_expo": -8,
+    "in_mult_fp": "1000000000000",
+    "in_price": "23512000000",
+    "out": "234414640",
+    "out_decimals": 6,
+    "out_expo": -8,
+    "out_mult_fp": "1000000000000",
+    "out_price": "100000000",
+    "spread_bps": 30
+  },
+  {
+    "amount_in": "100000000",
+    "fn": "swap_out",
+    "in_decimals": 8,
+    "in_expo": -8,
+    "in_mult_fp": "2000000000000",
+    "in_price": "23512000000",
+    "out": "264360021",
+    "out_decimals": 8,
+    "out_expo": -8,
+    "out_mult_fp": "1000000000000",
+    "out_price": "17734500000",
+    "spread_bps": 30
+  },
+  {
+    "amount_in": "12345",
+    "fn": "swap_out",
+    "in_decimals": 6,
+    "in_expo": -8,
+    "in_mult_fp": "1000000000000",
+    "in_price": "100000000",
+    "out": "929",
+    "out_decimals": 8,
+    "out_expo": -8,
+    "out_mult_fp": "1000000000000",
+    "out_price": "132100000000",
+    "spread_bps": 50
+  },
+  {
+    "balances": [
+      "10000000",
+      "20000000",
+      "30000000"
+    ],
+    "fn": "join_proportional",
+    "max_amounts": [
+      "1000000",
+      "2000000",
+      "3000000"
+    ],
+    "out": {
+      "amounts": [
+        "1000000",
+        "2000000",
+        "3000000"
+      ],
+      "shares_total": "10000000"
+    },
+    "supply": "100000000"
+  },
+  {
+    "balances": [
+      "10000000",
+      "20000000",
+      "30000000"
+    ],
+    "fn": "join_proportional",
+    "max_amounts": [
+      "1000000",
+      "5000000",
+      "3000000"
+    ],
+    "out": {
+      "amounts": [
+        "1000000",
+        "2000000",
+        "3000000"
+      ],
+      "shares_total": "10000000"
+    },
+    "supply": "100000000"
+  },
+  {
+    "balances": [
+      "33333333",
+      "0",
+      "777777777777"
+    ],
+    "fn": "join_proportional",
+    "max_amounts": [
+      "7",
+      "0",
+      "1000000000"
+    ],
+    "out": {
+      "amounts": [
+        "7",
+        "0",
+        "157501"
+      ],
+      "shares_total": "25"
+    },
+    "supply": "123456789"
+  },
+  {
+    "balance": "50000000",
+    "fn": "redeem_amount",
+    "net": "1000000",
+    "out": "500000",
+    "supply": "100000000"
+  },
+  {
+    "balance": "10",
+    "fn": "redeem_amount",
+    "net": "3",
+    "out": "4",
+    "supply": "7"
+  },
+  {
+    "balance": "123456789",
+    "fn": "redeem_amount",
+    "net": "999999",
+    "out": "123456542",
+    "supply": "1000001"
+  },
+  {
+    "amount": "1000000",
+    "bps": 100,
+    "fn": "bps_of",
+    "out": "10000"
+  },
+  {
+    "amount": "999",
+    "bps": 50,
+    "fn": "bps_of",
+    "out": "4"
+  },
+  {
+    "amount": "123456789",
+    "bps": 1,
+    "fn": "bps_of",
+    "out": "12345"
+  },
+  {
+    "elapsed": "31536000",
+    "fn": "accrue_fees",
+    "has_parent": false,
+    "mgmt": 500,
+    "out": [
+      "5319148935",
+      "1063829788",
+      "0"
+    ],
+    "platform": 100,
+    "royalty": 1000,
+    "supply": "100000000000"
+  },
+  {
+    "elapsed": "86400",
+    "fn": "accrue_fees",
+    "has_parent": true,
+    "mgmt": 500,
+    "out": [
+      "12330793",
+      "2740177",
+      "1370088"
+    ],
+    "platform": 100,
+    "royalty": 1000,
+    "supply": "100000000000"
+  },
+  {
+    "elapsed": "60",
+    "fn": "accrue_fees",
+    "has_parent": true,
+    "mgmt": 200,
+    "out": [
+      "0",
+      "0",
+      "0"
+    ],
+    "platform": 100,
+    "royalty": 1000,
+    "supply": "1000000"
+  },
+  {
+    "elapsed": "2592000",
+    "fn": "accrue_fees",
+    "has_parent": false,
+    "mgmt": 0,
+    "out": [
+      "0",
+      "82259391",
+      "0"
+    ],
+    "platform": 100,
+    "royalty": 1000,
+    "supply": "100000000000"
+  },
+  {
+    "elapsed": "1000",
+    "fn": "accrue_fees",
+    "has_parent": false,
+    "mgmt": 500,
+    "out": [
+      "0",
+      "0",
+      "0"
+    ],
+    "platform": 100,
+    "royalty": 1000,
+    "supply": "0"
+  },
+  {
+    "fn": "drift",
+    "out": [
+      0,
+      0
+    ],
+    "targets": [
+      5000,
+      3000,
+      2000
+    ],
+    "values": [
+      "50000000",
+      "30000000",
+      "20000000"
+    ]
+  },
+  {
+    "fn": "drift",
+    "out": [
+      4000,
+      2000
+    ],
+    "targets": [
+      5000,
+      3000,
+      2000
+    ],
+    "values": [
+      "70000000",
+      "20000000",
+      "10000000"
+    ]
+  },
+  {
+    "fn": "drift",
+    "out": [
+      6667,
+      2500
+    ],
+    "targets": [
+      2500,
+      2500,
+      2500,
+      2500
+    ],
+    "values": [
+      "1",
+      "2",
+      "3",
+      "0"
+    ]
+  },
+  {
+    "fn": "share_price",
+    "nav": "123456789012",
+    "out": "1234567",
+    "supply": "100000000000"
+  },
+  {
+    "amount": "123456789",
+    "den": "2",
+    "fn": "convert_amount",
+    "num": "3",
+    "out": "185185183"
+  }
+]
