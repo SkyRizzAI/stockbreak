@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AllocationBar, AllocationLegend } from "@/components/data/allocation";
+import { DecimalInput } from "@/components/data/decimal-input";
 import { IndexGlyph, TickerMono } from "@/components/data/glyph";
 import { Price } from "@/components/data/num";
 import { SimulatedBadge } from "@/components/data/states";
@@ -77,6 +78,41 @@ const PRESETS: {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const total = (ps: Pick[]) => round2(ps.reduce((a, p) => a + p.weight, 0));
+
+/** Base UI sends a number for pointer input and an array for keyboard input. */
+export function sliderValue(v: number | readonly number[], fallback: number): number {
+  const n = Array.isArray(v) ? v[0] : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Set one weight and spread the rest over the other unlocked assets in
+ * proportion, so the total stays 100%. Locked assets never move.
+ */
+export function setWeightKeepTotal(ps: Pick[], mint: string, v: number): Pick[] {
+  const me = ps.find((p) => p.mint === mint);
+  if (!me) return ps;
+  const locked = ps.filter((p) => p.locked && p.mint !== mint).reduce((a, p) => a + p.weight, 0);
+  const cap = Math.max(0, 100 - locked);
+  const free = ps.filter((p) => !p.locked && p.mint !== mint);
+  // Nothing else can absorb the change: this weight is whatever is left.
+  const w = free.length ? round2(Math.min(cap, Math.max(0, v))) : round2(cap);
+  const rest = cap - w;
+  const freeSum = free.reduce((a, p) => a + p.weight, 0);
+  let out = ps.map((p) => {
+    if (p.mint === mint) return { ...p, weight: w };
+    if (p.locked) return p;
+    return {
+      ...p,
+      weight: round2(freeSum > 0 ? (p.weight / freeSum) * rest : rest / free.length),
+    };
+  });
+  const diff = round2(100 - total(out));
+  const i = out.findIndex((p) => !p.locked && p.mint !== mint);
+  if (diff !== 0 && i >= 0)
+    out = out.map((p, j) => (j === i ? { ...p, weight: round2(Math.max(0, p.weight + diff)) } : p));
+  return out;
+}
 
 function normalize(ps: Pick[]): Pick[] {
   const locked = ps.filter((p) => p.locked).reduce((a, p) => a + p.weight, 0);
@@ -237,12 +273,7 @@ function Wizard() {
         { ...a, weight: ps.length ? 100 / ps.length : 100, locked: false },
       ]);
     });
-  const setWeight = (mint: string, v: number) =>
-    setPicks((ps) =>
-      ps.map((p) =>
-        p.mint === mint ? { ...p, weight: round2(Math.max(0, Math.min(100, v))) } : p,
-      ),
-    );
+  const setWeight = (mint: string, v: number) => setPicks((ps) => setWeightKeepTotal(ps, mint, v));
   const equal = () =>
     setPicks((ps) => normalize(ps.map((p) => ({ ...p, locked: false, weight: 1 }))));
   const capLike = () =>
@@ -517,13 +548,11 @@ function Wizard() {
                   <div className="flex items-center gap-3">
                     <TickerMono symbol={p.symbol} />
                     <span className="num flex-1 text-sm">{p.symbol}</span>
-                    <Input
+                    <DecimalInput
                       aria-label={`${p.symbol} weight`}
                       className="num h-9 w-20 text-right"
-                      value={String(p.weight)}
-                      onChange={(e) =>
-                        setWeight(p.mint, Number(e.target.value.replace(/[^\d.]/g, "")) || 0)
-                      }
+                      value={p.weight}
+                      onCommit={(v) => setWeight(p.mint, v)}
                       data-testid={`weight-${p.symbol}`}
                     />
                     <span className="text-sm text-muted-foreground">%</span>
@@ -553,7 +582,7 @@ function Wizard() {
                     min={0}
                     max={100}
                     step={0.5}
-                    onValueChange={(v) => setWeight(p.mint, (v as number[])[0] ?? 0)}
+                    onValueChange={(v) => setWeight(p.mint, sliderValue(v, p.weight))}
                     aria-label={`${p.symbol} weight slider`}
                   />
                 </li>
@@ -602,7 +631,7 @@ function Wizard() {
                       min={1}
                       max={20}
                       step={0.5}
-                      onValueChange={(v) => setDrift((v as number[])[0] ?? 5)}
+                      onValueChange={(v) => setDrift(sliderValue(v, drift))}
                       aria-label="Drift threshold"
                     />
                   </Field>
@@ -614,7 +643,7 @@ function Wizard() {
                       min={1}
                       max={30}
                       step={1}
-                      onValueChange={(v) => setPeriodDays((v as number[])[0] ?? 7)}
+                      onValueChange={(v) => setPeriodDays(sliderValue(v, periodDays))}
                       aria-label="Period"
                     />
                   </Field>
@@ -625,7 +654,7 @@ function Wizard() {
                     min={0.5}
                     max={5}
                     step={0.1}
-                    onValueChange={(v) => setSlippage(round2((v as number[])[0] ?? 1))}
+                    onValueChange={(v) => setSlippage(round2(sliderValue(v, slippage)))}
                     aria-label="Max slippage"
                   />
                 </Field>
@@ -635,7 +664,7 @@ function Wizard() {
                     min={0}
                     max={1440}
                     step={1}
-                    onValueChange={(v) => setCooldownMin((v as number[])[0] ?? 1)}
+                    onValueChange={(v) => setCooldownMin(sliderValue(v, cooldownMin))}
                     aria-label="Cooldown"
                   />
                 </Field>
@@ -658,7 +687,7 @@ function Wizard() {
                 min={0}
                 max={5}
                 step={0.1}
-                onValueChange={(v) => setMgmt(round2((v as number[])[0] ?? 0))}
+                onValueChange={(v) => setMgmt(round2(sliderValue(v, mgmt)))}
                 aria-label="Management fee"
               />
             </Field>
@@ -668,7 +697,7 @@ function Wizard() {
                 min={0}
                 max={1}
                 step={0.05}
-                onValueChange={(v) => setEntry(round2((v as number[])[0] ?? 0))}
+                onValueChange={(v) => setEntry(round2(sliderValue(v, entry)))}
                 aria-label="Entry fee"
               />
             </Field>
@@ -678,7 +707,7 @@ function Wizard() {
                 min={0}
                 max={1}
                 step={0.05}
-                onValueChange={(v) => setExit(round2((v as number[])[0] ?? 0))}
+                onValueChange={(v) => setExit(round2(sliderValue(v, exit)))}
                 aria-label="Exit fee"
               />
             </Field>

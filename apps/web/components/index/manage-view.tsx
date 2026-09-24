@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { UserLink } from "@/components/data/addr";
+import { DecimalInput } from "@/components/data/decimal-input";
 import { TickerMono } from "@/components/data/glyph";
 import { ErrorState, KV, RowsSkeleton, Section } from "@/components/data/states";
 import { openConnect } from "@/components/shell/wallet-button";
@@ -225,16 +226,14 @@ function Propose({ d }: { d: IndexDetail }) {
           <div key={r.mint} className="flex items-center gap-2">
             <TickerMono symbol={r.symbol} />
             <span className="num flex-1 text-sm">{r.symbol}</span>
-            <Input
+            <DecimalInput
               aria-label={`${r.symbol} target`}
               className="num h-9 w-20 text-right"
-              value={String(r.weight)}
-              onChange={(e) =>
+              value={r.weight}
+              onCommit={(v) =>
                 setRows((rs) =>
                   rs.map((x) =>
-                    x.mint === r.mint
-                      ? { ...x, weight: Number(e.target.value.replace(/[^\d.]/g, "")) || 0 }
-                      : x,
+                    x.mint === r.mint ? { ...x, weight: Math.min(100, Math.max(0, v)) } : x,
                   ),
                 )
               }
