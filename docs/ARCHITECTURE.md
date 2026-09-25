@@ -9,9 +9,9 @@ flowchart LR
   subgraph Browser
     UI[Next.js UI] --> W[Wallet Standard<br/>Phantom / Dev Wallet]
   end
-  subgraph Server lokal
-    API[Route API Next.js<br/>+ Blinks + OG]
-    WK[Worker]
+  subgraph Server (lokal atau Cloudflare Workers)
+    API[Route API Next.js<br/>+ Blinks + OG<br/>+ MCP remote /api/mcp]
+    WK[Worker<br/>+ Autopilot]
     MCP[MCP server<br/>stdio + HTTP :3333]
     DB[(Postgres :5434)]
   end
@@ -30,7 +30,9 @@ flowchart LR
   MCP -- baca --> API
   MCP -- intent --> DB
   MCP -- agent_* --> IV
-  Agent[LLM eksternal] --> MCP
+  Agent[LLM eksternal<br/>Claude / ChatGPT / Cursor] --> MCP
+  Agent --> API
+  WK -- siklus Autopilot memakai tool MCP --> MCP
   IV -- CPI terbatas --> MM
 ```
 
@@ -60,13 +62,21 @@ Prinsip keamanan (A14): checked math & pembulatan menguntungkan vault; `transfer
 **`apps/web`** (Next.js App Router, shadcn/ui, TanStack Query). Wallet lewat `@solana/kit-plugin-wallet` (Wallet Standard): Phantom di devnet, Dev Wallet (keypair di localStorage, terdaftar sebagai wallet standard) di localnet/devnet. Transaksi dibangun di client dengan SDK lalu ditandatangani wallet. Route API membaca DB + chain untuk angka live (NAV, bobot, drift). Blinks: `/actions.json` + `/api/actions/join/[pubkey]` (tx swap lalu `links.next` tx join). OG image per index lewat `next/og`. Halaman `/sign?id=` mengeksekusi intent dari MCP (transaksi dibangun ulang dengan blockhash baru, multi-langkah).
 
 **`apps/worker`** (Bun, satu proses, loop independen):
-- `price`: Jupiter Price v3 → Finnhub → random walk, dikali shock (`bun run price`), dipublikasikan ke oracle; feed yang belum ada (target IPO) dilewati.
+- `price`: PreStocks API (aset pre-IPO, D037) → Jupiter Price v3 → Finnhub → random walk, dikali shock (`bun run price`), naik/turun maksimal 5% per tick (D039), lalu dipublikasikan ke oracle. Feed yang belum ada (target IPO) dilewati.
 - `indexer`: event program → tabel `events`, sinkron index & posisi.
 - `snapshot`: NAV & share price per menit (chart, return).
 - `keeper`: rebalance otomatis saat trigger strategi terpenuhi (memakai jam validator agar `warp` berlaku).
 - `fees`: `accrue_fees` berkala. `follow`: `sync_targets` index follower. `gamification`: XP & badge idempoten.
+- `autopilot` (D047): tiap menit mengambil agent yang jadwalnya jatuh tempo atau yang diminta "Run now". Kunci agent didekripsi dengan `AGENT_KEY_SECRET`. Satu siklus LLM (API kompatibel OpenAI, `AGENT_LLM_*`) memakai tool MCP in-process dengan allowlist, scope index, batas 12 panggilan tool, dan batas 120 dtk. Hasilnya disimpan di `agent_runs`. Worker menulis heartbeat di `worker_status`, yang dipakai web untuk menampilkan apakah Autopilot tersedia.
 
-**`apps/mcp`** (MCP TypeScript SDK v2): 18 tool + resource `docs://guide`. Tool baca memakai JSON API web agar angka sama dengan UI (D028). Tool `build_*` menyimpan intent di `sign_intents` dan mengembalikan link `/sign`. Tool `agent_*` aktif bila `AGENT_KEYPAIR_PATH` diset dan menandatangani dengan keypair agent; `simulate_rebalance` meniru semua pemeriksaan program lalu mensimulasikan transaksi di RPC. Transport stdio dan Streamable HTTP (127.0.0.1, validasi Host).
+**`apps/mcp`** (MCP TypeScript SDK v2): 31 tool + resource `docs://guide`.
+- **Tool baca** (9) memakai JSON API web agar angka sama dengan UI (D028). `simulate_rebalance` meniru semua pemeriksaan program lalu mensimulasikan transaksi di RPC.
+- **`build_*`** (10: join, redeem, create, clone, serta kelola index milik user: propose/apply/cancel update, pause, managers, claim fees, D048) menyimpan intent di `sign_intents` dan mengembalikan link `/sign`.
+- **`agent_*`** (12, D046) menandatangani dengan wallet agent: create, join, redeem, rebalance, propose/apply/cancel update, claim fees, post, register, USDC uji. Wallet agent berasal dari salah satu sumber berikut:
+  - `AGENT_KEYPAIR_PATH`/`AGENT_KEYPAIR_JSON` (operator, dengan Bearer `MCP_AGENT_TOKEN` di remote); atau
+  - agent milik user: API key `sbk_…` → wallet agent yang kuncinya disimpan terenkripsi (D045).
+- **Transport**: stdio, Streamable HTTP lokal (127.0.0.1:3333, validasi Host), dan remote publik di web `/api/mcp` (CORS, rate limit, tanpa key hanya tool baca + `build_*`, D043).
+- **Autopilot**: `src/autopilot.ts` berisi siklus Autopilot (allowlist tool, prompt, `plainSummary`), dipakai oleh worker dan `bun run agent:loop`.
 
 ## Alur data utama
 
@@ -78,11 +88,14 @@ Prinsip keamanan (A14): checked math & pembulatan menguntungkan vault; `transfer
 6. **Follow**: perubahan bobot induk (propose → timelock → apply) disalin worker ke follower lewat `sync_targets`.
 7. **IPO**: `bun run ipo` membuat mint saham baru, lalu `migrate_ipo` untuk tiap index pemegang (rasio 1:1), timeline & badge `ipo_survivor`.
 8. **Fee**: management fee terakru sebagai share baru (owed) untuk kreator, platform, dan royalty induk clone; diklaim terpisah.
+9. **AI (asisten)**: LLM memanggil `build_*` → intent → user membuka `/sign`, meninjau ringkasan, lalu menandatangani. Progres langkah disimpan di server, sehingga bisa dilanjutkan tanpa swap dua kali.
+10. **AI (agent milik user)**: `/agents` → create agent (wallet baru, kunci terenkripsi AES-256-GCM) → fund SOL/USDC → kreator menambahkannya sebagai manager → API key atau Autopilot. Program vault tetap membatasi: manager bisa rebalance dan propose, tetapi tidak bisa menarik dana holder.
 
 ## Jaringan & kunci
 
 - Localnet: Surfpool offline di 8899 (`bun run dev`), time-travel via `surfnet_timeTravel` (`bun run warp`).
 - Devnet: program ter-deploy, `bun run dev:devnet` menjalankan worker/web/MCP lokal menunjuk devnet; faucet SOL ditransfer dari admin. Mainnet tidak pernah dipakai untuk transaksi (price feeder hanya membaca harga).
+- Demo publik (D050): Cloudflare Workers di-build dari GitHub. Worker `stockbreak` (web + `/api/mcp`) berjalan di `https://stockbreak.fun`, dan worker `stockbreak-worker` menjalankan loop yang sama lewat Cron Trigger tiap menit. Hyperdrive menghubungkannya ke Postgres. Opsi lain ada di `docs/DEPLOY.md`.
 - Keypair di `.keys/` (gitignored) dan config CLI project `.keys/solana-cli.yml`; config Solana global tidak disentuh.
 
 ## Pengujian
@@ -91,6 +104,9 @@ Prinsip keamanan (A14): checked math & pembulatan menguntungkan vault; `transfer
 |---|---|
 | Program | LiteSVM (Rust), 38 test sukses + gagal per error (`bun run test:program`) |
 | SDK | bun test: paritas math, humanisasi error, flow nyata di Surfpool :18899 |
-| MCP | bun test klien in-process terhadap stack localnet |
-| E2E | Playwright: halaman (light/dark, 375/1280), flow dev wallet, Blink/OG, MCP → `/sign`, skenario DoD §11.1 |
+| SDK (jumlah) | 59 test |
+| MCP | bun test: 33 unit (remote/public, manage, siklus Autopilot dengan LLM palsu) + 11 terhadap stack localnet |
+| DB / worker / config | 19 / 9 / 3 test |
+| E2E | Playwright, 107 test: halaman (light/dark, 375/1280), flow dev wallet, Blink/OG, MCP → `/sign`, skenario DoD §11.1, skenario A16/A18, API key agent, remote MCP, manage lewat MCP, siklus agent + Autopilot (`agent-lifecycle.spec.ts`; run LLM sungguhan opsional `E2E_AUTOPILOT_LLM=1`) |
+| Demo | `bun run demo:record`: 16 adegan 1080p (`e2e/tests/demo.spec.ts`) |
 | Gerbang | `bun run verify` (lint, typecheck, test program, test TS, build, e2e) |

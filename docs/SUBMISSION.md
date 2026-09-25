@@ -6,7 +6,8 @@ Dokumen kerja untuk mengisi form di https://hackathons.solana.com/hackathons/sto
 - [ ] Submit versi pertama **secepatnya** (GitHub + teks di bawah), lalu edit.
 - [ ] Sponsor track: **PreStocks** saja. Jangan Tessera, karena memakai token pre-IPO non-PreStocks membuat kita gugur.
 - [ ] Repo GitHub publik; README sudah versi juri. Pastikan `.env`, `.env.test`, dan `.keys/` tidak ter-push (sudah di-gitignore; cek dengan `git status` sebelum push).
-- [ ] Live demo devnet publik (lihat `docs/DEPLOY.md`), lalu isi URL di README dan form.
+- [x] Live demo devnet publik: **https://stockbreak.fun** (Cloudflare Workers, D050). URL sudah ada di README; isi juga di form.
+- [x] Rekaman video teknis otomatis 1080p: `e2e/demo/stockbreak-technical-demo.mp4` (lihat "Klip demo otomatis").
 - [ ] Rekam video pitch (≤3 menit) dan video teknis (≤5 menit), unggah (YouTube unlisted/Loom), isi link di README dan form.
 - [ ] Minta 2–3 orang mencoba demo; kutip feedback singkat di form (juri menghargai bukti user).
 - [ ] Sebelum rekam: `bun run verify:devnet` PASS, harga worker berjalan, seed devnet ada.
@@ -27,11 +28,16 @@ Rebalancing is an on-chain mandate, not a promise:
 
 A PreStocks pre-IPO sleeve converts into the listed stock inside the vault when the company IPOs, the way the SpaceX PreStocks → SPCXx conversion works, so no holder misses the deadline.
 
-AI agents connect over MCP (18 tools). They either prepare requests the user signs (resumable, verified on-chain) or act as managers that can rebalance within the mandate but never withdraw. They compete with humans on a Human vs AI leaderboard.
+AI agents connect over MCP (31 tools, remote at stockbreak.fun/api/mcp) in three ways:
+- they prepare requests the user signs (resumable, verified on-chain);
+- a user creates their own agent in the app, funds it, adds it as a manager and drives it with an API key;
+- the user switches on hosted Autopilot: the agent reviews its indexes on a schedule with an LLM, rebalances within the mandate and posts its reasoning to the feed.
+
+Agents can never withdraw holders' funds, and they compete with humans on a Human vs AI leaderboard.
 
 Everything is shareable: a feed with index cards, OG images and Solana Blinks.
 
-Built with Anchor 1.2 (38 LiteSVM tests), @solana/kit + Codama, Next.js, and 93 Playwright end-to-end tests. Runs on devnet with simulated assets that mirror the real token mechanics; prices are read from real sources (PreStocks API, Jupiter).
+Built with Anchor 1.2 (38 LiteSVM tests), @solana/kit + Codama, Next.js, and 107 Playwright end-to-end tests. Live on devnet at https://stockbreak.fun. Runs on devnet with simulated assets that mirror the real token mechanics; prices are read from real sources (PreStocks API, Jupiter).
 
 **Why Solana:**
 - $0.001 fees and atomic multi-instruction transactions make 10-asset baskets and flash rebalances practical.
@@ -55,7 +61,7 @@ Rekam di devnet dengan Phantom, atau di localnet dengan dev wallet kalau devnet 
 | 1:00–1:20 | Second wallet: Join $100 (sign), position appears | "A follower joins with USDC. They get index shares. They can redeem any time. The creator can't block that." |
 | 1:20–1:45 | Terminal `bun run price -- --asset NVDAx --pct +30` → activity "rebalanced … drift 12% → 0%" | "NVIDIA jumps 30%. The index drifts past its rule. A permissionless keeper rebalances in one atomic transaction, and the program checks slippage and that every weight moved toward target, or it all reverts." |
 | 1:45–2:10 | `bun run ipo -- --asset SPACEX-pre` → MAG4 shows SPCXx | "When SpaceX listed, PreStocks holders had to swap into SPCXx before a deadline or lose everything. Inside a Stockbreak index, the vault migrates for every holder automatically." |
-| 2:10–2:35 | Claude Desktop/Code prompt: "Create an AI-infra index with $50" → /sign link → sign → index appears; leaderboard Human vs AI | "AI agents plug in over MCP. They can build and manage indexes, but they're managers: they can rebalance within the mandate and can never withdraw. Humans and agents compete on one leaderboard." |
+| 2:10–2:35 | Claude/ChatGPT prompt: "Create an AI-infra index with $50" → /sign link → sign; then AI page: Autopilot run log + agent post in the feed | "AI agents plug in over MCP, or run on Autopilot. They can build and manage indexes, but they're managers: they can rebalance within the mandate and can never withdraw. Humans and agents compete on one leaderboard." |
 | 2:35–2:55 | Portfolio + creator fees / clone royalty | "Creators earn management fees and a royalty every time someone clones their index. That's a creator economy for investing, on-chain." |
 | 2:55–3:00 | Logo + URL | "Stockbreak. The index launchpad for tokenized stocks." |
 
@@ -66,8 +72,8 @@ Rekam di devnet dengan Phantom, atau di localnet dengan dev wallet kalau devnet 
 | 0:30–1:30 | `index_vault`: vault PDA + share mint; join/redeem in-kind tanpa oracle setelah setoran pertama; pembukuan `AssetEntry.balance` internal (donasi token tidak berpengaruh); fee sebagai owed shares; checked `u128`, pembulatan menguntungkan vault |
 | 1:30–2:30 | Flash rebalance: `begin_rebalance` → swap → transfer → `end_rebalance`; tunjukkan tx di explorer; ticket mengunci semua instruksi lain; validasi program CPI dan `remaining_accounts`; pemicu mandate dicek on-chain |
 | 2:30–3:15 | Migrasi IPO (`migrate_ipo_asset`, CPI ke market, verifikasi PDA konversi); integrasi harga PreStocks (API → worker → oracle) |
-| 3:15–4:00 | MCP: 18 tool, dua mode; intent `/sign` dengan progres di server dan verifikasi signature on-chain; agent sebagai manager |
-| 4:00–4:40 | Kualitas: `bun run verify` (38 test program, SDK 59 dengan paritas math, MCP 10, worker 7, 93 e2e termasuk skenario kegagalan A16 + A18) |
+| 3:15–4:00 | MCP: 31 tool (baca, `build_*`, `agent_*`), remote `/api/mcp`; intent `/sign` dengan progres di server dan verifikasi signature on-chain; agent milik user (kunci terenkripsi, API key `sbk_…`); Autopilot di worker (allowlist tool, scope index, log run); agent sebagai manager |
+| 4:00–4:40 | Kualitas: `bun run verify` (38 test program, SDK 59 dengan paritas math, MCP 33, DB 19, worker 9, 107 e2e termasuk skenario kegagalan A16 + A18 dan siklus agent/Autopilot) |
 | 4:40–5:00 | Jalur ke mainnet: ganti daftar mint, routing Jupiter, transfer fee Token-2022 PreStocks |
 
 ## Klip demo otomatis

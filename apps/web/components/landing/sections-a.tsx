@@ -627,7 +627,7 @@ export function IndexToken() {
 const GUARDS = [
   ["Rebalancing", "Rebalance when drift > 5%"],
   ["Max slippage", "1%"],
-  ["Cooldown", "30s"],
+  ["Cooldown", "1 min"],
   ["Keeper", "Allowed"],
   ["Update timelock", "120s on devnet"],
 ];
@@ -813,8 +813,8 @@ export function PreIpo() {
             </div>
           </div>
           <span className="text-xs text-muted-foreground">
-            Token = PreStocks on-chain price · Mark = PreStocks reference price · Premium = token ÷
-            mark − 1
+            Example quote from Sep 2026; the app shows it live on every index page. Token =
+            PreStocks on-chain price · Mark = PreStocks reference price · Premium = token ÷ mark − 1
           </span>
         </Reveal>
 
@@ -876,7 +876,7 @@ export function PreIpo() {
           </div>
           <Reveal className="flex flex-col text-[15px] leading-[1.5]">
             {[
-              "Prices, mark price, premium and implied valuation read live from the PreStocks API",
+              "In the app, prices, mark price, premium and implied valuation are read live from the PreStocks API",
               "IPO migration keeps value continuous — no gap, no manual swap",
               "Followers of the index migrate too",
             ].map((t, i) => (

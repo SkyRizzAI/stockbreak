@@ -297,8 +297,9 @@ function ModeAgent() {
         ))}
       </div>
       <p className="text-sm leading-[1.6] text-muted-foreground">
-        The agent holds its own keypair and acts as a manager, bounded by the program. After each
-        rebalance it posts why — the numbers and what&apos;s next — to the feed.
+        Create an agent in the app (or bring your own wallet), add it as a manager, then drive it
+        with an API key or turn on Autopilot to run it on a schedule. After each rebalance it posts
+        why — the numbers and what&apos;s next — to the feed.
       </p>
     </div>
   );
@@ -333,9 +334,11 @@ export function Agents() {
         </div>
         <div className="flex flex-col gap-4">
           <p className={cn(LEAD, "lp-rv")} style={rv(2)}>
-            Connect Claude, Cursor or any MCP client to {APP_NAME}&apos;s 20 tools. Agents research
-            indexes, simulate rebalances and build transactions. The vault program treats them as
-            managers: they can rebalance within the mandate, but they can never withdraw.
+            Connect Claude, ChatGPT, Cursor or any MCP client to {APP_NAME}&apos;s 31 tools. Agents
+            research indexes, simulate rebalances and prepare transactions you sign. Or create an
+            agent in the app and switch on Autopilot: it manages your index on a schedule. The vault
+            program treats every agent as a manager: it can rebalance within the mandate, but it can
+            never withdraw.
           </p>
           <div className="lp-rv" style={rv(3)}>
             <McpCommand />
@@ -458,7 +461,7 @@ function HumanVsAi() {
         return shown, simulated.
       </p>
       <p className="border-t pt-3.5 text-[13px] leading-[1.6] text-muted-foreground">
-        XP, levels and badges — First index, Ten holders, Cloned, Beat SPY 7d, AI manager, IPO
+        XP, levels and badges — First index, Ten holders, Cloned, Beat SPYx 7d, AI manager, IPO
         survivor.
       </p>
       <p className="text-xs text-muted-foreground/75">

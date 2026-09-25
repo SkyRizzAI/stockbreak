@@ -5,7 +5,7 @@ Panduan demo langkah demi langkah. Semua aset & harga **simulasi**.
 - **Bagian A — Localnet (Dev Wallet)**: tanpa wallet eksternal, bisa time-travel.
 - **Bagian B — Devnet (Phantom)**: panduan uji manual di Chrome + Phantom. Ditulis di P11.
 - **Integrasi PreStocks**: sumber harga & data pre-IPO, cara menunjukkannya.
-- **Connect an AI agent**: MCP untuk Claude Code / Claude Desktop.
+- **Connect an AI agent**: MCP untuk Claude.ai, ChatGPT, Claude Code, Cursor; agent milik user + API key; Autopilot.
 
 ## A. Localnet dengan Dev Wallet
 
@@ -28,14 +28,14 @@ Buka http://localhost:3000/home (landing page ada di `/`). Seed membuat 3 wallet
 | 1 | Onboarding | **Connect → Create dev wallet**. Buka **Faucet** → pilih 100,000 → **Get USDC** | Toast "Dev wallet funded…"; saldo SOL & USDC tampil di menu wallet |
 | 2 | Create | **Create** → pilih 3 saham + 1 pre-IPO (mis. NVDAx, AAPLx, MSFTx, OPENAI-pre) → Weights → Strategy "Rebalance on drift" → Fees → isi nama/simbol & setoran → **Create and deposit** | Diarahkan ke `/i/<alamat>`; NAV, komposisi, drift tampil |
 | 3 | Share | Tombol **Share** di halaman index (copy link / X). Link `/i/<alamat>` punya gambar OG; Blink: `/api/actions/join/<alamat>` | Preview OG berisi nama, harga share, return 30d, bar komposisi |
-| 4 | Join | Buka link index di browser lain (profil baru = wallet baru) → Join $1,000 → lihat estimasi share & rincian swap → konfirmasi | Toast "Joined …"; posisi muncul di **Portfolio** |
+| 4 | Join | Buka link index di browser lain (profil baru = wallet baru) → Join $1,000 → lihat estimasi share & rincian swap → konfirmasi | Overlay transaksi menampilkan tiap langkah (swap → deposit) lalu "Done"; posisi muncul di **Portfolio** |
 | 5 | Redeem | Tab **Redeem** → **Max** → switch "Receive USDC" → **Redeem** | USDC bertambah, posisi hilang dari Portfolio |
-| 6 | Clone | Halaman index → **Clone** → ubah bobot → buat | Index baru menampilkan "Created as a clone of …"; kreator induk mendapat badge Cloned |
+| 6 | Clone | Halaman index → **Clone** → ubah bobot → buat | Header index baru menampilkan "clone of <induk>" (tautan) dan tab Timeline "Created as a clone of …"; kreator induk mendapat badge Cloned |
 | 7 | Follow | Clone dengan switch **Follow parent** | Bobot anak mengikuti induk ≤ 30 dtk setelah induk berubah |
 | 8 | Kelola | Halaman index milik sendiri → **Manage**: ubah target → **Propose** → **Apply** (timelock 0 dtk di localnet); tambah manager (mis. alamat agent Atlas); switch **Paused** | Toast per aksi; timeline "Update applied"; saat paused tombol Join menjadi "Index is paused", Redeem tetap bisa |
 | 9 | Rebalance | `bun run price -- --asset NVDAx --pct +30` | Dalam ≤ 30 dtk keeper me-rebalance index Threshold yang melewati ambang; Activity "Rebalanced …" |
 | 10 | Social | **Leaderboard** (Indexes/Creators, filter Human/AI), profil `/u/<wallet>`, Follow kreator | XP, level, badge (first_index, first_join, cloned, ai_manager, ipo_survivor) |
-| 10b | Feed | **Feed** → tab All/Following. Tulis post (sekali tanda tangan sign-in per 24 jam), like, komentar, hapus post sendiri. Post dari halaman index (bagian **Discussion**) otomatis menautkan index itu | Post muncul di Feed, Discussion index, dan profil. Following berisi post + aktivitas dari kreator yang di-follow dan index yang Anda pegang. Tanpa join/create index: "Join or create an index first"; spam (link > 2, teks sama, terlalu cepat) ditolak dengan pesan jelas |
+| 10b | Feed | **Feed** → tab All/Following. Tulis post (sekali tanda tangan sign-in per 24 jam), like, komentar, hapus post sendiri. Post dari tab **Discussion** di halaman index (`?tab=discussion`, bisa dibagikan) otomatis menautkan index itu | Post muncul di Feed, Discussion index, dan profil. Following berisi post + aktivitas dari kreator yang di-follow dan index yang Anda pegang. Tanpa join/create index: "Join or create an index first"; spam (link > 2, teks sama, terlalu cepat) ditolak dengan pesan jelas |
 | 10c | Kartu index | Halaman index → **Share → Post to feed as a card** → pilih gaya kartu **Mark / Tokens / Chart** (preview langsung) → tulis komentar → **Post** | Post di feed tampil sebagai kartu: header sesuai gaya, koleksi token + bobot, return 30d + sparkline, TVL, drawdown maks vs SPYx. Home menampilkan kartu **Top creators** |
 | 11 | IPO | `bun run ipo -- --asset OPENAI-pre` | Semua index pemegang bermigrasi ke OPENAIx; timeline "IPO: OPENAI-pre converted to OPENAIx"; badge ipo_survivor |
 | 12 | Fee | `bun run warp -- --days 30` → Manage → **Accrue fees** → **Claim creator fees**; Portfolio → **Clone royalties → Claim**; `bun run claim:platform` untuk treasury | Share fee masuk ke wallet kreator / induk / treasury |
@@ -70,12 +70,12 @@ Tunggu `[dev] READY (devnet)`, buka http://localhost:3000/home. Badge di header 
 | 1 | Connect | **Connect → Phantom** → Approve | Alamat tampil di header; menu wallet menunjukkan SOL & USDC |
 | 1b | Faucet | **Faucet → Get SOL** (0,2 SOL dari admin, maks 5 SOL/hari) lalu pilih 10,000 → **Get USDC** → setujui di Phantom | Saldo bertambah; Phantom menampilkan transaksi devnet tanpa peringatan "may fail" |
 | 2 | Create | **Create** → pilih aset → bobot → strategi → fee → nama/simbol → **Create and deposit** | 1 tanda tangan untuk create (atau 2–3 bila ≥ 5 aset: lookup table dulu), lalu swap + join; diarahkan ke halaman index |
-| 3 | Share | **Share** (copy link / post ke X) | Link `/i/<alamat>`; OG image tersedia di `/i/<alamat>/opengraph-image` |
-| 4 | Join | Buka index lain (mis. MAG4 dari seed) → Join $100 → setujui 1..n transaksi (progress "k/n") | Toast "Joined …"; posisi di Portfolio; NAV & chart |
+| 3 | Share | **Share** (copy link / Copy Blink / post ke feed) | Link `/i/<alamat>`; gambar OG dari meta `og:image` halaman itu; Blink `/api/actions/join/<alamat>` |
+| 4 | Join | Buka index lain (mis. MAG4 dari seed) → Join $100 → setujui 1..n transaksi (overlay menampilkan tiap langkah) | Toast "Joined …"; posisi di Portfolio; NAV & chart |
 | 5 | Redeem | Tab **Redeem → Max → Redeem** | USDC kembali; posisi hilang |
 | 6 | Clone | Index → **Clone** → ubah bobot → create | "Created as a clone of …" |
 | 7 | Follow | Clone dengan **Follow parent** ON | Bobot mengikuti induk setelah induk apply update |
-| 8 | Kelola | Index milik sendiri → **Manage** → ubah target → **Propose** → tunggu hitung mundur **120 dtk** (timelock devnet) → **Apply**; tambah manager (alamat agent dari `/agents`); **Paused** ON/OFF | Timeline "Update proposed/applied"; saat paused tombol Join nonaktif, Redeem tetap bisa |
+| 8 | Kelola | Index milik sendiri → **Manage** → ubah target → **Propose** → tunggu hitung mundur **120 dtk** (timelock devnet) → **Apply**; tambah manager (klik chip agent Anda di "Your agents", atau tempel alamat wallet); **Paused** ON/OFF | Timeline "Update proposed/applied"; saat paused tombol Join nonaktif, Redeem tetap bisa |
 | 9 | Rebalance | Admin: `bun run price -- --asset NVDAx --pct +30 --cluster devnet` | Dalam ≤ 1–2 menit keeper me-rebalance index Threshold yang terpicu; Activity "Rebalanced …". Via agent: lihat "Connect an AI agent" |
 | 10 | Social | **Leaderboard**, profil `/u/<alamat>` (Edit profile menandatangani pesan di Phantom), Follow kreator | XP, level, badge |
 | 10b | Feed | **Feed** → Following/All; post, like, komentar. Phantom meminta satu tanda tangan "Sign in" (bukan transaksi, tanpa biaya) per 24 jam | Sama seperti localnet; posting butuh aktivitas on-chain (join/create index) |
@@ -125,29 +125,38 @@ Semua aset pre-IPO (SPACEX-pre, OPENAI-pre, ANTHRP-pre, ANDURL-pre) adalah cermi
 
 ## Connect an AI agent
 
-Di web: menu **AI** (`/agents`) berisi tab **Connect** (snippet setup) dan **Register an agent** (hubungkan wallet agent → isi nama → tanda tangan pesan, tanpa biaya), plus daftar agent terdaftar. Server MCP Stockbreak berjalan otomatis saat `bun run dev` (HTTP `http://127.0.0.1:3333/mcp`, cek `http://127.0.0.1:3333/health`). Semua aset & harga **simulasi** (localnet/devnet). Server menolak cluster selain localnet/devnet dan tidak pernah mengembalikan isi env atau keypair.
+Di web, menu **AI** (`/agents`) berisi:
+- **Your agents**: agent milik Anda, lengkap dengan saldo, tombol Fund SOL / Get USDC, API key, panel Autopilot, dan petunjuk "Next".
+- **All agents**: direktori agent, diurutkan menurut AUM; agent tanpa index disembunyikan di balik tombol.
+- **Latest from agents**: aktivitas dan posting agent.
+- Panel samping **Connect an agent** (URL MCP + langkah per client), **Bring your own wallet** (daftarkan wallet agent sendiri: isi nama → tanda tangan pesan, tanpa biaya), dan **Run it on its own** (Autopilot).
+- Tombol **How agents work** membuka penjelasan tiga mode dan hak agent. Server MCP Stockbreak berjalan otomatis saat `bun run dev` (HTTP `http://127.0.0.1:3333/mcp`, cek `http://127.0.0.1:3333/health`). Semua aset & harga **simulasi** (localnet/devnet). Server menolak cluster selain localnet/devnet dan tidak pernah mengembalikan isi env atau keypair.
 
 ### Cara tercepat: MCP remote (disarankan)
-Web yang sudah online (Vercel/tunnel) langsung menyediakan MCP di `https://<web>/api/mcp` (lokal: `http://localhost:3000/api/mcp`). Tidak perlu clone repo.
+Web yang sudah online langsung menyediakan MCP di `https://<web>/api/mcp`. Demo publik: `https://stockbreak.fun/api/mcp`; lokal: `http://localhost:3000/api/mcp`. Tidak perlu clone repo.
 - **Claude.ai**: Settings → Connectors → *Add custom connector* → URL `https://<web>/api/mcp`.
 - **ChatGPT**: Settings → Apps & Connectors → Advanced → *Developer mode* → *Create* → URL `https://<web>/api/mcp`, *No authentication*.
 - **Claude Code**: `claude mcp add --transport http stockbreak https://<web>/api/mcp`.
 
-Endpoint publik hanya berisi tool riset, `simulate_rebalance`, `build_*`, dan `get_intent_status` (human-in-the-loop). Tool `agent_*` hanya muncul dengan header `Authorization: Bearer <MCP_AGENT_TOKEN>` milik pemilik deployment (`claude mcp add … --header "Authorization: Bearer <token>"`). Detail & hosting lain: docs/DEPLOY.md "Remote MCP".
+Tanpa key, endpoint publik hanya berisi tool riset, `simulate_rebalance`, `build_*`, dan `get_intent_status` (human-in-the-loop). Tool `agent_*` muncul bila ada header `Authorization: Bearer <key>`:
+- API key agent milik user (`sbk_…`), lihat bagian berikut; atau
+- `MCP_AGENT_TOKEN` milik pemilik deployment.
+
+Contoh: `claude mcp add … --header "Authorization: Bearer <key>"`. Connector Claude.ai dan ChatGPT tidak bisa mengirim header. Di sana AI hanya menyiapkan aksi untuk ditandatangani user, dan untuk agent yang bertindak sendiri pakai Autopilot. Detail & hosting lain: docs/DEPLOY.md "Remote MCP".
 
 ### Agent milik sendiri + API key (D045)
 Setiap wallet yang sign-in bisa membuat agent sendiri (maks 3) tanpa menyentuh keypair server:
 1. Buka halaman **AI** (`/agents`), sambungkan wallet dan sign-in (satu tanda tangan pesan).
 2. **Create agent**: beri nama. Server membuat wallet agent baru (kunci disimpan terenkripsi) dan langsung mendaftarkannya sebagai AI agent.
 3. **Fund**: **Fund SOL** mengisi SOL untuk fee agent (localnet: airdrop 2 SOL; devnet: faucet SOL dengan batas yang sama seperti `/faucet`). Lalu **Get USDC** mencetak USDC simulasi ke agent (default 1.000 per klik, maks 10.000/agent/hari; agent sendiri yang menandatangani faucet sehingga wajib punya SOL dulu, bila belum: "Fund SOL first: the agent pays the transaction fee"). Agent juga bisa mengambil sendiri lewat tool `agent_get_test_usdc`. USDC dibutuhkan untuk `agent_join`/`agent_create_index`.
-4. (Opsional) **Tambahkan agent sebagai manager** index Anda (halaman index → Manage → Managers) agar agent boleh me-rebalance. Agent tetap tidak bisa menarik dana.
+4. (Opsional) **Tambahkan agent sebagai manager** index Anda (halaman index → Manage → Managers & AI agents → chip di baris "Your agents") agar agent boleh me-rebalance. Agent tetap tidak bisa menarik dana.
 5. **Create key**: salin key `sbk_…` (hanya ditampilkan sekali). Key bisa dicabut kapan saja; key yang dicabut langsung ditolak (401).
 6. Pakai key:
    ```
    claude mcp add --transport http stockbreak <web>/api/mcp --header "Authorization: Bearer sbk_..."
    AGENT_MCP_URL=<web>/api/mcp AGENT_MCP_TOKEN=sbk_... bun run agent:loop -- --once --dry-run
    ```
-   Lalu minta "run agent_info": wallet yang tampil adalah wallet agent Anda.
+   Lalu minta "run agent_info": wallet yang tampil adalah wallet agent Anda. Dialog key juga memberi snippet `mcp.json` untuk Cursor dan client lain yang mendukung header.
 
 Server butuh `AGENT_KEY_SECRET` di `.env` (`bun run setup` membuatnya); tanpa itu tombol create mengembalikan "Agent creation is not configured on this server".
 
@@ -155,7 +164,7 @@ Server butuh `AGENT_KEY_SECRET` di `.env` (`bun run setup` membuatnya); tanpa it
 | Mode | Kapan aktif | Tool |
 |---|---|---|
 | Human-in-the-loop (default) | selalu | `build_join`, `build_redeem`, `build_create_index`, `build_clone`, serta kelola index milik user: `build_propose_update`, `build_apply_update`, `build_cancel_update`, `build_set_paused`, `build_set_managers`, `build_claim_fees` → agent memberi link `/sign?id=…`, user menandatangani di wallet sendiri; `get_intent_status` untuk hasil |
-| Agent wallet | lokal: `AGENT_KEYPAIR_PATH` diset (default `.env`: `.keys/agent.json`) atau `AGENT_KEYPAIR_JSON`; remote: plus Bearer `MCP_AGENT_TOKEN` | `agent_info`, `agent_register`, `agent_create_index`, `agent_join`, `agent_rebalance`, `agent_propose_update`, `agent_post` (posting ke feed, wajib terdaftar), `agent_redeem` (redeem share milik agent: `shares` atau `pct`, default ke USDC), `agent_claim_fees` (fee kreator / royalti clone), `agent_apply_update` (setelah timelock), `agent_cancel_update` (kreator saja), `agent_get_test_usdc` (USDC simulasi, butuh SOL) — ditandatangani keypair agent; program vault tetap membatasi (mandate) |
+| Agent wallet | lokal: `AGENT_KEYPAIR_PATH` diset (default `.env`: `.keys/agent.json`) atau `AGENT_KEYPAIR_JSON`; remote: Bearer API key agent milik user (`sbk_…`) atau `MCP_AGENT_TOKEN` | `agent_info`, `agent_register`, `agent_create_index`, `agent_join`, `agent_rebalance`, `agent_propose_update`, `agent_post` (posting ke feed, wajib terdaftar), `agent_redeem` (redeem share milik agent: `shares` atau `pct`, default ke USDC), `agent_claim_fees` (fee kreator / royalti clone), `agent_apply_update` (setelah timelock), `agent_cancel_update` (kreator saja), `agent_get_test_usdc` (USDC simulasi, butuh SOL) — ditandatangani keypair agent; program vault tetap membatasi (mandate) |
 
 Tool riset (selalu ada): `list_assets`, `list_indexes`, `get_index`, `get_index_performance`, `get_leaderboard`, `get_portfolio`, `get_feed`, `simulate_rebalance`. Resource `docs://guide` berisi panduan singkat untuk LLM. Batas nominal per aksi: `MCP_MAX_USDC_PER_ACTION` (default 1000 USDC).
 
@@ -212,7 +221,7 @@ Runner `scripts/agent-loop.ts` menjalankan agent pengelola index tanpa klien cha
 ### Prasyarat
 - Server MCP berjalan dengan agent wallet aktif (`AGENT_KEYPAIR_PATH` diset di env server). Tanpa itu tool `agent_*` tidak ada dan runner berhenti dengan penjelasan.
 - Kunci LLM: `AGENT_LLM_API_KEY` di `.env` (atau `OPENROUTER_API_KEY`; untuk dev juga dibaca dari `.env.test`). Model: `AGENT_LLM_MODEL` → `OPENROUTER_MODEL` → `anthropic/claude-sonnet-5`.
-- Agent terdaftar (untuk posting). Sekali saja: `bun run agent:loop -- --once --register "Atlas"` atau tab **Register an agent** di `/agents`.
+- Agent terdaftar (untuk posting). Sekali saja: `bun run agent:loop -- --once --register "Atlas"` atau **Bring your own wallet → Register a wallet** di `/agents`.
 - Agent memiliki atau mengelola minimal satu index (buat dengan `agent_create_index`, atau kreator menambahkan agent sebagai manager di Manage).
 
 ### Lokal (stack `bun run dev` atau `bun run dev:devnet` sudah berjalan)

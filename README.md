@@ -6,7 +6,8 @@
 
 | | |
 |---|---|
-| Live demo (devnet) | _add the public URL here_ (see [docs/DEPLOY.md](docs/DEPLOY.md)) |
+| Live demo (devnet) | **https://stockbreak.fun** (app at [/home](https://stockbreak.fun/home)) |
+| Remote MCP (for Claude, ChatGPT, Cursor…) | `https://stockbreak.fun/api/mcp` |
 | Pitch video (≤3 min) | _add link_ |
 | Technical walkthrough (≤5 min) | _add link_ |
 | Programs (devnet) | `index_vault` [`4XaBXM6jZKj3mrQcezjA74ydDEBwiq1amzDtY7ZMc6me`](https://explorer.solana.com/address/4XaBXM6jZKj3mrQcezjA74ydDEBwiq1amzDtY7ZMc6me?cluster=devnet) · `mock_market` [`9WK7engPUC9pegD4wfJN4tCDPcZGxERVifRNHxsehqX8`](https://explorer.solana.com/address/9WK7engPUC9pegD4wfJN4tCDPcZGxERVifRNHxsehqX8?cluster=devnet) |
@@ -25,7 +26,7 @@
 
 - **Global retail investor** (outside the US, 22–35, already holds USDC in Phantom): wants a theme, not ten tickers, and wants it rebalanced without babysitting.
 - **Creator / finfluencer**: publishes an index, shares it as a card or Blink, earns management/entry/exit fees plus a royalty every time someone clones it.
-- **AI agent operator**: plugs an agent into Stockbreak over MCP and competes in the **Human vs AI** league with rules the program enforces.
+- **AI agent operator**: plugs an agent into Stockbreak over MCP, or creates one in the app and switches on **Autopilot**, and competes in the **Human vs AI** league with rules the program enforces.
 
 ## What makes it different
 
@@ -35,7 +36,7 @@
 | Rebalance rules enforced on-chain (drift/periodic, slippage, cooldown, timelock, keeper) | ✅ | off-chain | ❌ |
 | Creator fees **+ clone royalties** | ✅ | ❌ | fees only, if any |
 | Pre-IPO sleeve that migrates automatically at IPO (PreStocks) | ✅ | ❌ | ❌ |
-| AI managers over MCP that cannot withdraw funds | ✅ | ❌ | ❌ |
+| AI managers over MCP (or hosted Autopilot) that cannot withdraw funds | ✅ | ❌ | ❌ |
 | Social loop: feed, shareable index cards, Blinks, Human vs AI leaderboard | ✅ | partial | partial |
 
 ## How it works
@@ -44,10 +45,12 @@
 flowchart LR
   U[Browser + Phantom / dev wallet] --> W[apps/web · Next.js]
   X[X / Discord Blink] --> W
-  A[Claude, Cursor, any MCP agent] --> M[apps/mcp]
+  A[Claude, ChatGPT, Cursor, any MCP client] --> M[apps/mcp · also served at /api/mcp]
+  W --> M
   W --> S[packages/sdk · @solana/kit + Codama]
   M --> S
-  K[apps/worker · prices, indexer, keeper, follow] --> S
+  K[apps/worker · prices, indexer, keeper, follow, Autopilot] --> S
+  K -- Autopilot runs the same MCP tools --> M
   S --> IV[index_vault program]
   S --> MM[mock_market program · oracle, swaps, IPO]
   W & M & K --> DB[(Postgres: cache, history, social)]
@@ -58,7 +61,10 @@ flowchart LR
 - **Mandate.** Strategy (hold / drift threshold / periodic), max slippage, cooldown, keeper on/off and a timelock on weight and fee changes (holders can see and exit before a change lands). Redeem can never be blocked by the creator: fees are booked as owed shares and claimed separately.
 - **Clone & Follow.** A clone is a new index with a `parent`; the parent creator earns a royalty share of its fees. A follower index syncs its targets to the parent automatically.
 - **Pre-IPO → IPO migration.** When a listing happens, `migrate_ipo_asset` converts the pre-IPO token held by the vault into the listed stock token via the market program, keeping the weight. This is what PreStocks holders must do by hand before a deadline, done for every holder of the index at once.
-- **AI agents (MCP, 18 tools).** Human-in-the-loop: the agent prepares a request and the user signs it at `/sign` (resumable, and signatures are verified on-chain). Agent wallet: the agent is a *manager* that can rebalance or propose changes within the mandate, but it cannot withdraw anything.
+- **AI agents (MCP, 31 tools).** Three ways to use an AI, and in every one the vault program sets the limits:
+  1. **Ask an AI, you sign.** Connect Claude, ChatGPT or Cursor to the MCP URL. The AI researches and prepares a join, redeem, new index or a change to your own index (`build_*`). You review and sign it at `/sign`, which is resumable and verifies each signature on-chain.
+  2. **Your own agent.** On the AI page, any signed-in wallet can create up to 3 agents. The server keeps each agent key encrypted. You fund the agent with test SOL/USDC, add it as a manager of your index, and drive it with an API key (`sbk_…`, shown once, revocable). As a manager it can rebalance, propose weights, claim fees and exit its own positions (`agent_*`), but it cannot withdraw holders' funds.
+  3. **Autopilot.** Switch it on and the platform worker wakes the agent on a schedule. An LLM decides using the same MCP tools, acts within the mandate, and posts its reasoning to the feed. Every run is logged, and your computer can be off. It uses a tool allowlist (no redeem, no minting, no new indexes), is limited to the indexes you choose, and caps tool calls and time per run.
 
 ### Why Solana
 
@@ -73,15 +79,15 @@ The pre-IPO sleeve uses **PreStocks** assets only (SpaceX, OpenAI, Anthropic, An
 ## Quality
 
 - **Programs:** 38 LiteSVM tests (a success test and a failure test for each error). Checked `u128` math, rounding in favour of the vault, and `transfer_checked` with the right token program. Every CPI program and every `remaining_accounts` entry is validated, and balances are tracked internally rather than read from ATAs.
-- **SDK:** 59 tests, including parity between the SDK math and the program math. MCP: 10 tests. Worker: 7, DB client: 5, config: 3.
-- **End to end:** 93 Playwright tests, including the complete user story and 19 "what can go wrong" scenarios (keeper mandates, IPO value continuity, phasing an asset out to 0%):
+- **SDK:** 59 tests, including parity between the SDK math and the program math. MCP: 33 (plus 11 against a live stack), including the Autopilot cycle with a scripted LLM. DB: 19, worker: 9, config: 3.
+- **End to end:** 107 Playwright tests, including the complete user story, hosted agents (fund → create → join → claim fees → redeem through the remote MCP, API key revoke, Autopilot "Run now"), and "what can go wrong" scenarios (keeper mandates, IPO value continuity, phasing an asset out to 0%):
   - an interrupted agent `/sign` flow that resumes without swapping twice;
   - a first deposit that is too small;
   - forged intent status;
   - tampered Blink state;
   - feed pagination.
 
-  See [docs/analysis/A16-qa-scenarios.md](docs/analysis/A16-qa-scenarios.md).
+  See [docs/analysis/A16-qa-scenarios.md](docs/analysis/A16-qa-scenarios.md) and [A18](docs/analysis/A18-qa-putaran-2.md).
 - `bun run verify` runs lint, typecheck, program tests, TS tests, build and e2e on a fresh chain. `bun run verify:devnet` checks the devnet deployment.
 
 ## Why not mainnet yet
@@ -95,7 +101,9 @@ The pre-IPO sleeve uses **PreStocks** assets only (SpaceX, OpenAI, Anthropic, An
 
 ## Try it
 
-**Devnet with Phantom:** Phantom → Settings → Developer Settings → Testnet Mode → Solana Devnet. Open the live demo, connect, and grab SOL and simulated USDC at `/faucet`. Or use the built-in dev wallet, with no install needed.
+**Devnet with Phantom:** Phantom → Settings → Developer Settings → Testnet Mode → Solana Devnet. Open [stockbreak.fun](https://stockbreak.fun/home), connect, and grab SOL and simulated USDC at `/faucet`. Or use the built-in dev wallet, with no install needed.
+
+**AI:** add `https://stockbreak.fun/api/mcp` as a custom connector in Claude.ai or ChatGPT (or `claude mcp add --transport http stockbreak https://stockbreak.fun/api/mcp`) and ask it to build an index for you. For an agent that acts on its own, open the **AI** page: create an agent, fund it, add it as a manager, and turn on Autopilot.
 
 **Localnet** (full control: move prices, time travel, trigger an IPO):
 
@@ -114,6 +122,7 @@ Open http://localhost:3000/home (the landing page is at `/`) → **Connect → D
 4. `bun run price -- --asset NVDAx --pct +30` and watch the keeper rebalance.
 5. `bun run ipo -- --asset SPACEX-pre`.
 6. `bun run warp -- --days 30` and check fees and the leaderboard.
+7. Open **AI** → create an agent → Fund SOL → add it as a manager of your index → turn on Autopilot → **Run now**.
 
 The full guide, including connecting Claude as an agent, is in [docs/DEMO.md](docs/DEMO.md).
 
@@ -143,16 +152,18 @@ The full guide, including connecting Claude as an agent, is in [docs/DEMO.md](do
 | Full verification | `bun run verify` |
 | Devnet readiness | `bun run verify:devnet` |
 | Deploy programs to devnet | `bun run deploy:devnet` |
+| Run an agent loop yourself | `bun run agent:loop -- --once --dry-run` |
+| Record the demo clips (1080p) | `bun run demo:record` |
 
-Ports: web 3000, MCP 3333 (`/mcp`), RPC 8899/8900, Postgres 5434.
+Ports: web 3000 (remote MCP at `/api/mcp`), MCP 3333 (`/mcp`), RPC 8899/8900, Postgres 5434.
 
 ## Repository layout
 
 ```
 anchor/          index_vault (product) and mock_market (simulated oracle, swaps, faucet, IPO)
-apps/web         Next.js app, API routes, Blinks, OG images
-apps/worker      price feeder, indexer, snapshots, keeper, fees, follow sync, gamification
-apps/mcp         MCP server (stdio + Streamable HTTP) for AI agents
+apps/web         Next.js app, API routes, remote MCP (/api/mcp), agent console, Blinks, OG images
+apps/worker      price feeder, indexer, snapshots, keeper, fees, follow sync, gamification, Autopilot
+apps/mcp         MCP server (stdio + Streamable HTTP) for AI agents, Autopilot cycle
 packages/sdk     @solana/kit client (Codama-generated + flows); math identical to the program
 packages/db      Drizzle schema, migrations, queries
 packages/config  env schemas, asset registry, deployments
@@ -163,6 +174,6 @@ docs/            plan, architecture, demo, deploy, decisions, status (Indonesian
 
 ## Built with
 
-Anchor 1.2 · LiteSVM · Surfpool · `@solana/kit` + Codama · `@solana/react` + Wallet Standard · Next.js 16 · Tailwind + shadcn/ui · TanStack Query · PostgreSQL + Drizzle · MCP TypeScript SDK · Solana Actions/Blinks · Playwright · Bun + Turborepo + Biome.
+Anchor 1.2 · LiteSVM · Surfpool · `@solana/kit` + Codama · `@solana/react` + Wallet Standard · Next.js 16 · Tailwind + shadcn/ui · TanStack Query · PostgreSQL + Drizzle · MCP TypeScript SDK · OpenAI-compatible LLM API (Autopilot) · Solana Actions/Blinks · Playwright · Bun + Turborepo + Biome · Cloudflare Workers (OpenNext, Cron Triggers).
 
 Open-source components are used as dependencies under their licenses. All application code in this repository was written for the hackathon.

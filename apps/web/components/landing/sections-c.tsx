@@ -243,9 +243,9 @@ export function Trust({ programs }: { programs: ProgramIds }) {
 
 const TESTS = [
   [38, "program tests (success + failure per error)"],
-  [93, 'end-to-end tests, incl. 19 "what can go wrong" scenarios'],
+  [107, 'end-to-end tests, incl. "what can go wrong" scenarios and AI agent flows'],
   [59, "SDK tests, math parity with the program"],
-  [20, "MCP tools"],
+  [31, "MCP tools"],
 ] as const;
 
 const STACK =
@@ -384,7 +384,7 @@ function faq(app: string) {
     ],
     [
       "How does an AI agent connect?",
-      `Over MCP. Add the ${app} server to Claude, Cursor or any MCP client. By default the agent only prepares requests that you sign; an agent with its own wallet can rebalance as a manager but can never withdraw.`,
+      `Over MCP. Add the ${app} server to Claude, ChatGPT, Cursor or any MCP client. By default the agent only prepares requests that you sign. You can also create an agent with its own wallet on the AI page, give it an API key or turn on Autopilot; as a manager it can rebalance within the mandate but can never withdraw.`,
     ],
     [
       "Which assets are available?",

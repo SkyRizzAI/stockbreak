@@ -334,7 +334,7 @@ Setiap section di bawah memakai format: **Tujuan** · **Copy** · **Visual** · 
 - Eyebrow: `AI AGENTS · MCP`
 - Title: **Let an AI manage the index. It still can't touch the money.**
 - Body:
-  > Connect Claude, Cursor or any MCP client to Stockbreak's 20 tools. Agents research indexes, simulate rebalances and build transactions. The vault program treats them as managers: they can rebalance within the mandate, but they can never withdraw.
+  > Connect Claude, ChatGPT, Cursor or any MCP client to Stockbreak's 31 tools. Agents research indexes, simulate rebalances and prepare transactions you sign. Or create an agent in the app and switch on Autopilot: it manages your index on a schedule. The vault program treats every agent as a manager: it can rebalance within the mandate, but it can never withdraw.
 - Dua mode (dua kolom):
   - **You sign** — The agent prepares a request and sends you a link. You review a human-readable summary at `/sign` and approve in your wallet. Resumable, and every step is verified on-chain.
   - **Agent wallet** — The agent holds its own keypair and acts as a manager, bounded by the program. After each rebalance it posts why — the numbers and what's next — to the feed.
@@ -349,7 +349,12 @@ Setiap section di bawah memakai format: **Tujuan** · **Copy** · **Visual** · 
 
 **Visual**: split — kiri jendela chat minimal (teks saja), kanan halaman `/sign` (ringkasan + tombol Sign + overlay progres). Garis tipis menghubungkan link di chat ke halaman sign. Opsional klip `07-agent.webm`.
 
-**Catatan**: README masih menyebut "18 tools"; jumlah terkini di kode adalah **20** (tambahan `agent_post` dan `get_feed`, D044). Endpoint publik hanya membuka tool riset/simulasi/`build_*`; `agent_*` butuh token operator (D043). Daftar tool untuk halaman detail/FAQ: `list_assets`, `list_indexes`, `get_index`, `get_index_performance`, `get_leaderboard`, `get_portfolio`, `get_feed`, `simulate_rebalance`, `build_create_index`, `build_join`, `build_redeem`, `build_clone`, `get_intent_status`, `agent_info`, `agent_register`, `agent_create_index`, `agent_join`, `agent_rebalance`, `agent_propose_update`, `agent_post`.
+**Catatan** (diperbarui 26 Sep): jumlah tool di kode sekarang **31**.
+- Tool baca (9): `list_assets`, `list_indexes`, `get_index`, `get_index_performance`, `get_leaderboard`, `get_portfolio`, `get_feed`, `get_intent_status`, `simulate_rebalance`.
+- `build_*` (10): `build_join`, `build_redeem`, `build_create_index`, `build_clone`, `build_propose_update`, `build_apply_update`, `build_cancel_update`, `build_set_paused`, `build_set_managers`, `build_claim_fees`.
+- `agent_*` (12): `agent_info`, `agent_register`, `agent_create_index`, `agent_join`, `agent_redeem`, `agent_rebalance`, `agent_propose_update`, `agent_apply_update`, `agent_cancel_update`, `agent_claim_fees`, `agent_post`, `agent_get_test_usdc`.
+
+Tanpa key, endpoint publik hanya membuka tool baca dan `build_*`. `agent_*` butuh API key agent milik user (`sbk_…`, D045) atau token operator (D043). Autopilot (D047) menjalankan agent sesuai jadwal di worker.
 
 ---
 
@@ -579,7 +584,7 @@ Index demo (seed) yang bisa dipakai di visual: **MAG4** Magnificent Four (megaca
 | Tenggat konversi SpaceX PreStocks → SPCXx 12 Mar 2027 23:59 UTC | Pengumuman PreStocks di X (A17 §2, D037) |
 | Maks 10 aset, fee 0–5% / 0–1% / 0–1%, platform 1%, royalty clone 10% | PLAN §5.1–5.2 |
 | Timelock devnet 120 detik | D007 |
-| 38 test program, 59 SDK, 93 e2e, 19 skenario kegagalan | README "Quality", STATUS |
+| 38 test program, 59 SDK, 107 e2e (termasuk skenario kegagalan dan alur agent) | README "Quality", STATUS |
 | 20 tool MCP | `apps/mcp/src/tools/*` (README masih 18) |
 | MCP publik + token agent | D043 |
 | Agent menjelaskan keputusan di feed | D044 |
