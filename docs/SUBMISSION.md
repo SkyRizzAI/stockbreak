@@ -71,20 +71,32 @@ Rekam di devnet dengan Phantom, atau di localnet dengan dev wallet kalau devnet 
 | 4:40–5:00 | Jalur ke mainnet: ganti daftar mint, routing Jupiter, transfer fee Token-2022 PreStocks |
 
 ## Klip demo otomatis
-`bun run demo:record` menyalakan localnet bersih, lalu memainkan alur pitch dengan browser otomatis dan menyimpan satu klip 1280×720 per adegan di `e2e/demo/` (di-gitignore). Durasi total sekitar 3 menit, belum termasuk menunggu stack.
+`bun run demo:record` menyalakan localnet bersih, lalu memainkan semua alur normal dengan browser otomatis. Setiap adegan disimpan sebagai satu klip **1920×1080** di `e2e/demo/` (di-gitignore). Hasil ekspor:
+- `e2e/demo/mp4/*.mp4`: tiap adegan dalam H.264 1080p.
+- `e2e/demo/stockbreak-technical-demo.mp4`: semua adegan digabung. Waktu tunggu Autopilot dan keeper dipercepat 6×.
 
-| Klip | Isi | Baris naskah |
-|---|---|---|
-| `01-markets.webm` | Markets → MAG4, panel PreStocks | 0:00–0:15 |
-| `02-create.webm` | Buat "AI Infra + Anthropic" (NVDAx, MSFTx, ANTHRP-pre), setor $2.000 | 0:15–0:40 |
-| `03-share.webm` | Share → kartu (ganti gaya) → posting ke feed | 0:40–1:00 |
-| `04-join.webm` | Wallet lain join $100 | 1:00–1:20 |
-| `05-keeper.webm` | NVDA +30% → keeper rebalance (aktivitas "Rebalanced") | 1:20–1:45 |
-| `06-ipo.webm` | IPO: ANTHRP-pre → ANTHRPx di dalam index | 1:45–2:10 |
-| `07-agent.webm` | Agent MCP menyiapkan index → user tanda tangan di `/sign` → leaderboard | 2:10–2:35 |
-| `08-portfolio.webm` | 30 hari kemudian: portfolio + fee kreator | 2:35–2:55 |
+Dua wallet dev dipakai: **creator** (membuat AINFRA, punya agent AI) dan **investor** (join, redeem, clone, komentar).
 
-Gabungkan di editor mana saja (CapCut, iMovie), potong bagian menunggu (terutama klip 05), lalu tambahkan voice-over dari kolom Narasi. Untuk bukti Phantom/devnet, sisipkan rekaman layar singkat manual (connect Phantom + join) bila sempat.
+| Klip | Isi |
+|---|---|
+| `00-landing` | Landing page → masuk app |
+| `01-markets` | Home → Explore → Search (⌘K) → detail MAG4, panel PreStocks |
+| `02-onboarding` | Dev wallet (auto-fund SOL + USDC), faucet USDC |
+| `03-create` | Wizard: NVDAx, MSFTx, ANTHRP-pre, setor $2.000 → index AINFRA (overlay transaksi) |
+| `04-share` | Menu Share (Copy Blink / Solana Action) → posting kartu ke feed (ganti gaya) |
+| `05-join` | Investor join $300 |
+| `06-redeem` | Redeem 100 share |
+| `07-clone` | Clone AINFRA dengan "follow parent" |
+| `08-ai-agents` | Halaman AI: "How agents work", buat agent, Fund SOL, Get USDC, API key (tampil sekali) |
+| `09-manage` | Manage: propose → apply bobot baru, agent jadi manager, pause/unpause |
+| `10-autopilot` | Strategi dalam bahasa biasa → Autopilot on → Run now → agent me-rebalance + posting alasan |
+| `11-mcp-sign` | Asisten AI (MCP `build_create_index`) → user tanda tangan di `/sign` |
+| `12-keeper` | NVDA +30% → keeper me-rebalance otomatis |
+| `13-ipo` | IPO: ANTHRP-pre → ANTHRPx di dalam index + Timeline |
+| `14-social` | Feed: like, komentar, follow kreator, leaderboard, portfolio |
+| `15-earnings` | 30 hari kemudian: klaim fee kreator → portfolio |
+
+Tambahkan voice-over dari kolom Narasi. Untuk bukti Phantom/devnet, sisipkan rekaman layar singkat manual (connect Phantom + join) bila sempat.
 
 ## Tips rekaman
 - Resolusi 1280×720 atau 1920×1080, tema dark (default), zoom browser 110%.

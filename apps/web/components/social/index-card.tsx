@@ -200,7 +200,12 @@ export function IndexCard({
           <div className="flex flex-col gap-1">
             <dt className="text-xs text-muted-foreground">TVL</dt>
             <dd>
-              <Usd value={index.navUsd} compact className="text-base font-semibold" />
+              {/* No snapshot yet (index created moments ago): unknown, not $0. */}
+              {index.spark.length === 0 && index.navUsd <= 0 ? (
+                <span className="num text-base font-semibold text-muted-foreground">—</span>
+              ) : (
+                <Usd value={index.navUsd} compact className="text-base font-semibold" />
+              )}
             </dd>
           </div>
           <div className="flex flex-col gap-1">

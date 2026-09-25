@@ -21,7 +21,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
-import { ago } from "@/lib/format";
+import { ago, duration } from "@/lib/format";
 import { socialWrite } from "@/lib/social";
 
 interface Run {
@@ -42,6 +42,7 @@ export interface Autopilot {
   reason: string | null;
   lastRunAt: string | null;
   nextRunAt: string | null;
+  queued: boolean;
   runs: Run[];
 }
 export interface AgentIndexRef {
@@ -50,6 +51,12 @@ export interface AgentIndexRef {
 }
 
 const INTERVALS = [5, 15, 30, 60, 240, 1440];
+/** "in 29 min" for a future time; "any moment" once it is due. */
+function nextIn(ts: string): string {
+  const s = Math.floor((new Date(ts).getTime() - Date.now()) / 1000);
+  if (s <= 60) return "any moment";
+  return `in ${s < 3600 ? `${Math.round(s / 60)} min` : duration(s)}`;
+}
 const every = (m: number) => (m < 60 ? `${m} min` : m < 1440 ? `${m / 60} h` : "day");
 const STRATEGY_HINT =
   "e.g. Keep weights close to target. If one stock runs up more than 10% in a week, trim it back and explain why. Never change fees.";
@@ -77,7 +84,8 @@ export function AutopilotPanel({
   const q = useQuery({
     queryKey: key,
     queryFn: () => api<Autopilot>(`/api/me/agents/${wallet}/autopilot`),
-    refetchInterval: (query) => (query.state.data?.runs[0]?.status === "running" ? 3_000 : 20_000),
+    refetchInterval: (query) =>
+      query.state.data?.queued || query.state.data?.runs[0]?.status === "running" ? 3_000 : 20_000,
   });
   const [strategy, setStrategy] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -143,7 +151,7 @@ export function AutopilotPanel({
             {!a.available
               ? (a.reason ?? "Not available on this server")
               : a.enabled
-                ? `Runs every ${every(a.intervalMinutes)}${a.nextRunAt ? ` · next ${ago(a.nextRunAt).replace(" ago", "")}` : ""}`
+                ? `Runs every ${every(a.intervalMinutes)}${a.nextRunAt ? ` · next ${nextIn(a.nextRunAt)}` : ""}`
                 : indexes.length
                   ? "Off. Turn it on and the platform runs this agent on a schedule."
                   : "Needs an index to manage first."}
@@ -153,7 +161,9 @@ export function AutopilotPanel({
           <Button
             variant="outline"
             size="sm"
-            disabled={busy || !a.available || !indexes.length || a.runs[0]?.status === "running"}
+            disabled={
+              busy || !a.available || !indexes.length || a.queued || a.runs[0]?.status === "running"
+            }
             onClick={() => void runNow()}
             data-testid="autopilot-run"
           >
@@ -252,6 +262,15 @@ export function AutopilotPanel({
         <span className="text-xs text-muted-foreground">
           Recent runs{a.model ? ` · ${a.model}` : ""}
         </span>
+        {a.queued ? (
+          <p
+            className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground"
+            data-testid="autopilot-queued"
+          >
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Queued. The platform starts this run within a minute.
+          </p>
+        ) : null}
         {a.runs.length ? (
           <ul className="flex flex-col divide-y rounded-lg border text-sm">
             {a.runs.map((r) => (
@@ -281,7 +300,7 @@ export function AutopilotPanel({
               </li>
             ))}
           </ul>
-        ) : (
+        ) : a.queued ? null : (
           <span className="text-xs text-muted-foreground">No runs yet.</span>
         )}
       </div>

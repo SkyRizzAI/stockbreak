@@ -286,7 +286,12 @@ describe("plainSummary", () => {
     const md =
       "## Cycle Summary — PL1\n**Status: No action needed.**\n| A | B |\n|---|---|\n| x | y |\n- **Rebalance** — skipped.\n1. Post — none.";
     expect(plainSummary(md)).toBe(
-      "Cycle Summary — PL1 Status: No action needed. Rebalance — skipped. Post — none.",
+      "PL1 Status: No action needed. Rebalance — skipped. Post — none.",
     );
   });
+});
+
+test("plainSummary drops a leading summary label", () => {
+  expect(plainSummary("Cycle summary for owner: Checked AINFRA.")).toBe("Checked AINFRA.");
+  expect(plainSummary("Summary: nothing to do.")).toBe("nothing to do.");
 });

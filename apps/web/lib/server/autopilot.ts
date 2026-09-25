@@ -30,6 +30,8 @@ export interface AutopilotView {
   reason: string | null;
   lastRunAt: string | null;
   nextRunAt: string | null;
+  /** "Run now" was pressed and the worker has not picked it up yet. */
+  queued: boolean;
   runs: {
     id: number;
     startedAt: string;
@@ -113,6 +115,7 @@ export async function autopilotView(wallet: string): Promise<AutopilotView> {
     ...avail,
     lastRunAt: iso(row?.lastRunAt ?? null),
     nextRunAt: iso(row?.nextRunAt ?? null),
+    queued: row?.runRequested ?? false,
     runs: runs.map((r) => ({
       id: r.id,
       startedAt: r.startedAt.toISOString(),

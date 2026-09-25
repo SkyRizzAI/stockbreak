@@ -27,7 +27,7 @@ import { ApiError, api } from "@/lib/api";
 import { ago, num, short } from "@/lib/format";
 import { ensureSession, socialWrite } from "@/lib/social";
 import { useWallet } from "@/lib/wallet";
-import { type AgentIndexRef, AutopilotPanel } from "./autopilot";
+import { type AgentIndexRef, type Autopilot, AutopilotPanel } from "./autopilot";
 
 export interface MyKey {
   id: number;
@@ -197,6 +197,11 @@ function AgentRow({
 }) {
   const qc = useQueryClient();
   const bal = useBalances(a.wallet);
+  // Shared with AutopilotPanel (same query key): the hint knows whether it is on.
+  const pilot = useQuery({
+    queryKey: ["autopilot", a.wallet],
+    queryFn: () => api<Autopilot>(`/api/me/agents/${a.wallet}/autopilot`),
+  });
   const pub = useQuery({
     queryKey: ["agents"],
     queryFn: () =>
@@ -275,7 +280,9 @@ function AgentRow({
       </div>
       {bal.data ? (
         <p className="text-xs text-muted-foreground" data-testid="agent-next-step">
-          <span className="text-foreground">Next: </span>
+          {pilot.data?.enabled && indexes.length && bal.data.sol >= 0.01 ? null : (
+            <span className="text-foreground">Next: </span>
+          )}
           {bal.data.sol < 0.01 ? (
             <span className="text-warn">give it a little SOL for transaction fees (Fund SOL).</span>
           ) : !indexes.length ? (
@@ -283,6 +290,8 @@ function AgentRow({
               let it manage an index: open your index&apos;s Manage page and add{" "}
               <span className="text-foreground">{a.name}</span> under Managers &amp; AI agents.
             </>
+          ) : pilot.data?.enabled ? (
+            "Autopilot is on: it runs on schedule and every run is logged below."
           ) : (
             "turn on Autopilot below, or create an API key to drive it from your own AI."
           )}
