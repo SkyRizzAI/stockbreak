@@ -25,22 +25,32 @@ const ev = await registerIpoEvent(c, c.admin, pre.symbol, {
   ratioDen: den ?? 1n,
 });
 log(S, `${ev.preSymbol} → ${ev.newSymbol} (${ev.ratioNum}:${ev.ratioDen}) new mint ${ev.newMint}`);
-const res = await migrateAllHolders(c, c.admin, ev);
-log(S, `migrated ${res.migrated.length} index(es), synced ${res.synced.length} follower(s)`);
-
+// Record the listed stock right away: if a migration fails below, the worker still prices it.
 const d = readDeployment(c.cluster);
-if (d) {
-  const target = assetBySymbol(ev.newSymbol);
-  d.mints[target.symbol] = ev.newMint;
-  const { feedPda } = await import("@repo/sdk");
-  d.feeds[target.symbol] = await feedPda(ev.newMint);
+const target = assetBySymbol(ev.newSymbol);
+const record = () => {
+  if (!d) return;
   d.ipos[ev.preSymbol] = {
     newSymbol: ev.newSymbol,
     newMint: ev.newMint,
     ratioNum: ev.ratioNum.toString(),
     ratioDen: ev.ratioDen.toString(),
-    at: new Date().toISOString(),
+    at: d.ipos[ev.preSymbol]?.at ?? new Date().toISOString(),
   };
   writeDeployment(d);
+};
+if (d) {
+  const { feedPda } = await import("@repo/sdk");
+  d.mints[target.symbol] = ev.newMint;
+  d.feeds[target.symbol] = await feedPda(ev.newMint);
+  // The worker's follow loop reads this to hold followers until their own migration.
+  record();
+}
+const res = await migrateAllHolders(c, c.admin, ev);
+log(S, `migrated ${res.migrated.length} index(es), synced ${res.synced.length} follower(s)`);
+for (const f of res.failed) log(S, `FAILED ${f.index}: ${f.error}`);
+if (res.failed.length) {
+  log(S, `${res.failed.length} index(es) failed; re-run the same command to retry them`);
+  process.exit(1);
 }
 process.exit(0);

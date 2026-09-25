@@ -29,7 +29,7 @@ const server = Bun.serve({
     return new Response("Not found", { status: 404 });
   },
 });
-console.log(`stocklana MCP on http://127.0.0.1:${server.port}/mcp`);
+console.log(`stockbreak MCP on http://127.0.0.1:${server.port}/mcp`);
 
 const stop = async () => {
   await handler.close();

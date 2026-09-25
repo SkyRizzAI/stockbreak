@@ -97,6 +97,29 @@ export async function assertFreshPrices(
   }
 }
 
+/**
+ * Like assertFreshPrices, but waits for the price feeder (right after a warp or a feeder
+ * hiccup the oracle catches up within one or two ticks) before giving up.
+ */
+export async function waitForFreshPrices(
+  ctx: SolanaCtx,
+  mints: Address[],
+  onWait?: () => void,
+  timeoutMs = 45_000,
+): Promise<void> {
+  const until = Date.now() + timeoutMs;
+  for (let first = true; ; first = false) {
+    try {
+      await assertFreshPrices(ctx, mints);
+      return;
+    } catch (e) {
+      if (!(e instanceof UserFacingError) || Date.now() > until) throw e;
+      if (first) onWait?.();
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
+}
+
 const hasTicket = (s: IndexState) => s.rebalanceTicket.__option === "Some";
 
 /** Joins are rejected on chain while paused or mid-rebalance: say so before any swap. */
@@ -177,6 +200,37 @@ function minUsdcForOneRaw(out: (usdcIn: bigint) => bigint): bigint {
   let v = 1n;
   for (let i = 0; i < 48 && out(v) === 0n; i++) v *= 2n;
   return v;
+}
+
+/**
+ * First deposit into an empty index: the program requires the deposited values to match
+ * the target weights within INITIAL_WEIGHT_TOLERANCE_BPS at the oracle prices of the join.
+ * Swaps land at earlier prices, so scale every amount down to the most-constrained leg:
+ * the deposit then matches the targets exactly and the small excess stays in the wallet.
+ */
+export function fitInitialAmounts(val: Valuation, amounts: bigint[]): bigint[] {
+  const values = val.assets.map(
+    (a, i) =>
+      math.valueUsd(amounts[i] ?? 0n, a.entry.decimals, a.mint.multFp, {
+        price: a.feed.price,
+        expo: a.feed.expo,
+      }) ?? 0n,
+  );
+  // Full-index value the smallest leg can support (value per 100% of weight).
+  let k: bigint | null = null;
+  for (const [i, a] of val.assets.entries()) {
+    if (a.targetBps <= 0) continue;
+    const per = ((values[i] ?? 0n) * 10_000n) / BigInt(a.targetBps);
+    if (k === null || per < k) k = per;
+  }
+  if (!k) return amounts.map(() => 0n);
+  return val.assets.map((a, i) => {
+    const v = values[i] ?? 0n;
+    const amt = amounts[i] ?? 0n;
+    if (a.targetBps <= 0 || v === 0n) return 0n;
+    const want = ((k as bigint) * BigInt(a.targetBps)) / 10_000n;
+    return want >= v ? amt : (amt * want) / v;
+  });
 }
 
 /**
@@ -477,7 +531,9 @@ export async function zapIn(
   if (plan.expectedShares <= 0n)
     throw new UserFacingError("The amount is too small to mint any shares. Nothing was sent.");
   const legs = plan.legs.filter((l) => l.mint !== usdcMint && l.usdcIn > 0n);
-  await assertFreshPrices(ctx, [usdcMint, ...state.assets.map((a) => a.mint)]);
+  await waitForFreshPrices(ctx, [usdcMint, ...state.assets.map((a) => a.mint)], () =>
+    opts.onProgress?.({ step: "wait", done: 0, total: legs.length + 1 }),
+  );
   const mints = plan.legs.map((l) => l.mint);
   const holdings = await Promise.all(
     plan.legs.map((l) => ata(user.address, l.mint, l.tokenProgram)),
@@ -589,7 +645,12 @@ export async function zapIn(
     });
     const fresh = await fetchIndex(ctx, index);
     assertJoinable(fresh);
-    const r = sharesFor(await valueIndex(ctx, fresh), fresh, maxAmounts);
+    const freshVal = await valueIndex(ctx, fresh);
+    if (freshVal.effectiveSupply === 0n) {
+      const fitted = fitInitialAmounts(freshVal, maxAmounts);
+      for (const [i, v] of fitted.entries()) maxAmounts[i] = v;
+    }
+    const r = sharesFor(freshVal, fresh, maxAmounts);
     if (r.initial && r.value < MIN_INITIAL_VALUE)
       throw new UserFacingError("The first deposit must be worth at least $1.");
     if (r.shares <= 0n) throw new UserFacingError("The amount is too small to mint any shares.");
@@ -668,16 +729,31 @@ export async function joinWithHeld(
   const state = await fetchIndex(ctx, index);
   assertJoinable(state);
   const p = await planJoinWithHeld(ctx, user.address, state);
-  if (p.initial)
-    throw new UserFacingError(
-      "The first deposit must be made with USDC. Swap the assets to USDC first.",
-    );
+  if (p.initial) {
+    // Empty index (e.g. a create whose deposit stopped after the swaps): deposit the held
+    // assets trimmed to the target weights.
+    const val = await valueIndex(ctx, state);
+    p.balances = fitInitialAmounts(val, p.balances);
+    const r = sharesFor(val, state, p.balances);
+    if (r.value < MIN_INITIAL_VALUE)
+      throw new UserFacingError(
+        "The assets in your wallet are worth less than the $1 first deposit. Swap them to USDC instead.",
+      );
+    p.shares = r.shares;
+  }
   if (p.shares <= 0n)
     throw new UserFacingError(
       "Your wallet does not hold every asset of this index. Swap them to USDC instead.",
     );
   const minShares = (p.shares * (10_000n - slip)) / 10_000n;
-  const ixs = await joinIxs(user, index, state, p.balances, minShares > 0n ? minShares : 1n, false);
+  const ixs = await joinIxs(
+    user,
+    index,
+    state,
+    p.balances,
+    minShares > 0n ? minShares : 1n,
+    p.initial,
+  );
   opts.onProgress?.({ step: "join", done: 0, total: 1 });
   const alt = await loadAlt(ctx, opts.lookupTable);
   const sig = await sendTx(ctx, user, ixs, {
@@ -746,7 +822,7 @@ export async function swapToUsdc(
     return { ...h, amount: cap !== undefined && cap < h.amount ? cap : h.amount };
   });
   if (!items.length) throw new UserFacingError("There is nothing to swap.");
-  await assertFreshPrices(ctx, [usdcMint, ...items.map((i) => i.mint)]);
+  await waitForFreshPrices(ctx, [usdcMint, ...items.map((i) => i.mint)]);
   const signatures: Signature[] = [];
   let done = 0;
   const total = Math.max(1, Math.ceil(items.length / 4));
@@ -859,7 +935,10 @@ export async function zapOut(
       );
   }
   const swapsNeeded = opts.toUsdc !== false;
-  if (swapsNeeded) await assertFreshPrices(ctx, [usdcMint, ...mints]);
+  if (swapsNeeded)
+    await waitForFreshPrices(ctx, [usdcMint, ...mints], () =>
+      opts.onProgress?.({ step: "wait", done: 0, total: pre.length + 2 }),
+    );
   const total = pre.length + 1 + (swapsNeeded ? 1 : 0);
   const signatures: Signature[] = [];
   let done = 0;

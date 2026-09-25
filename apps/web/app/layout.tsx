@@ -17,7 +17,13 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: { default: APP_NAME, template: `%s · ${APP_NAME}` },
   description: "Build, share and join tokenized stock indexes on Solana. All assets are simulated.",
-  metadataBase: new URL(process.env.WEB_URL || "http://localhost:3000"),
+  // Same fallback as serverEnv(): an explicit WEB_URL, else Vercel's production domain.
+  metadataBase: new URL(
+    process.env.WEB_URL ||
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:3000"),
+  ),
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

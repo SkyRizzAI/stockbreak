@@ -50,7 +50,11 @@ export function pct(v: number | null | undefined, digits = 2, signed = true): st
   return `${signed && v > 0 ? "+" : ""}${s}%`;
 }
 
-export const bps = (b: number, digits = 1) => `${(b / 100).toFixed(digits).replace(/\.0$/, "")}%`;
+export const bps = (b: number, digits = 1) => {
+  const t = (b / 100).toFixed(digits).replace(/\.0$/, "");
+  // Tiny negatives round to "-0": show a plain 0.
+  return `${Number(t) === 0 ? "0" : t}%`;
+};
 
 export const short = (addr: string, n = 4) =>
   addr.length > 2 * n + 1 ? `${addr.slice(0, n)}…${addr.slice(-n)}` : addr;

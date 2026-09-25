@@ -177,3 +177,65 @@ Format: tanggal · konteks · opsi · pilihan · alasan.
   - Tool MCP `get_intent_status` menambah field `result.index` (aditif); `build_redeem` menolak jumlah share 0.
   - API `/api/feed` dan `/api/posts` memakai parameter `cursor` (opak), menggantikan `before`.
 - **Belum**: C8 (follower yang parent-nya tumbuh menjadi >10 aset) butuh perubahan program. Worker hanya backoff dan mencatat log.
+
+## D037 — 2026-09-25 — PreStocks sebagai sumber utama harga & data pre-IPO
+- **Konteks**: bounty PreStocks mensyaratkan proyek memakai PreStocks; proyek yang memakai token pre-IPO non-PreStocks gugur (A17 §2, §7.4). Sebelumnya harga pre-IPO hanya dari Jupiter, dan UI tidak menyebut issuer.
+- **Keputusan**:
+  - Worker membaca `https://prestocks.com/api/prestocks` (publik, tanpa key, read-only mainnet) sebagai sumber pertama untuk aset `priceSource: "prestocks"`, dicocokkan lewat `contract_address` = `mainnetMint`. Oracle memakai `tokenPrice` (harga token on-chain, sama konsepnya dengan Jupiter). Urutan fallback: PreStocks → Jupiter → random walk. Gagal API → backoff 30 detik, worker tidak crash. Untuk pre-IPO, fallback Jupiter kini memakai `usdPrice` (harga token), bukan `stockData.price` (≈ mark), agar konsisten dengan sumber utama.
+  - Respons divalidasi zod di `packages/config/src/prestocks.ts` (dipakai worker & web). Baris tidak valid dilewati.
+  - Skema DB tidak diubah: `prices.source` (text) menyimpan `prestocks`. Mark price, implied valuation, dan premium tidak disimpan di DB, tetapi disajikan route web `GET /api/prestocks` (cache memori 60 detik, timeout 5 detik, data lama tetap disajikan saat gagal).
+  - `AssetDef.issuer` (aditif) = `{ name: "PreStocks", url: "https://prestocks.com" }` untuk semua aset pre-IPO; dikirim lewat `/api/config`.
+  - UI: tag PreStocks + panel referensi di halaman index + catatan migrasi IPO yang meniru SpaceX (konversi ke SPCXx, tenggat 12 Mar 2027 23:59 UTC).
+  - Tidak memakai Tessera atau token pre-IPO lain. Hasil grep: "Tessera" hanya ada di dokumen riset/bounty (`refs/hackathon.md`, A17) dan peringatan di `docs/SUBMISSION.md`; tidak ada di kode, seed, atau MCP.
+- **Kontrak**: tanpa perubahan program atau skema DB. Tool MCP `list_assets` menambah field `issuer`, `issuerUrl`, `prestocksTokenPriceUsd`, `prestocksMarkPriceUsd`, `prestocksPremiumToMark`, `prestocksImpliedValuationUsd` (aditif). Endpoint baru `/api/prestocks`.
+
+## D038 — 2026-09-25 — Demo publik devnet: Vercel + Neon + worker lokal (cadangan: Cloudflare quick tunnel)
+- **Konteks**: juri dan klien Blink butuh URL https publik. Agent tidak bisa membuat akun atau men-deploy, sehingga user yang menjalankan langkahnya. Biaya harus nol dan langkahnya minimal.
+- **Keputusan**:
+  - Opsi A (utama): web di Vercel (Root Directory `apps/web`, `apps/web/vercel.json` dengan install `bunx bun@1.4.2 install` dan build `bun run build`), Postgres Neon, sedangkan worker + MCP berjalan di laptop user (`bun run worker:devnet`, DB = `DEVNET_DATABASE_URL`). Opsi B (cadangan): `cloudflared tunnel --url http://localhost:3000` + `DEVNET_WEB_URL=<tunnel> bun run start:devnet`. Detail di `docs/DEPLOY.md`.
+  - `next.config.ts`: `outputFileTracingRoot` = root monorepo dan `outputFileTracingIncludes` (`packages/config/package.json`, `packages/config/deployments/*.json`) agar `readDeployment()` jalan di fungsi Vercel. `.env` root tidak dimuat bila `VERCEL` di-set. `WEB_URL` jatuh ke `https://$VERCEL_PROJECT_PRODUCTION_URL` bila kosong (juga di `parseEnv`). Toggle `NEXT_OUTPUT_STANDALONE` untuk uji tata letak lokal. `allowedDevOrigins` = `*.trycloudflare.com`.
+  - `@repo/db` `connectionOptions()`: `channel_binding` dibuang (postgres.js mengirimnya sebagai parameter server dan ditolak, terbukti di Postgres lokal), TLS `require` untuk host non-lokal tanpa `sslmode`, `prepare: false` untuk host `-pooler` (PgBouncer transaction mode), dan pool 3 + idle 20 s di Vercel (`DATABASE_POOL_MAX` override). Koneksi lokal tidak berubah.
+  - Env aditif `ADMIN_KEYPAIR_JSON` (zod: array JSON 64 byte) sebagai alternatif `ADMIN_KEYPAIR_PATH`. Tanpa keduanya, `/api/faucet/sol` di devnet membalas 503 dengan arahan ke faucet.solana.com (faucet USDC tetap jalan karena ditandatangani user).
+  - Script baru: `db:remote` (migrate/copy/check; copy = pg_dump `app_devnet` lokal → pg_restore via image docker postgres, URL tidak dicetak), `vercel:env` (menulis `.env.vercel` git-ignored untuk ditempel ke Vercel, hanya mencetak nama variabel), `check:public` (smoke test URL publik, read-only), `worker:devnet`, `start:devnet`. `dev.ts`: `DEVNET_DATABASE_URL` (lewati docker, migrasi via drizzle migrator) dan `DEVNET_WEB_URL` (WEB_URL untuk worker/MCP/web). Menunggu web lewat `localhost:3000`, bukan `WEB_URL`.
+  - MCP tidak dibuka ke publik: server memegang keypair agent, dan guard Host hanya menerima localhost.
+- **Risiko**:
+  - `ADMIN_KEYPAIR_JSON` di Vercel = upgrade authority program devnet ikut berada di platform pihak ketiga. Opsional dan hanya devnet; disarankan dikosongkan dan dihapus setelah penjurian.
+  - `NEXT_PUBLIC_RPC_URL` terlihat publik (lanjutan D031): default endpoint publik devnet, disarankan key Helius kedua yang dibatasi domain, dan `RPC_URL` server tetap secret.
+  - Worker di laptop harus menyala agar oracle tidak stale.
+- **Kontrak**: tanpa perubahan program, skema DB, atau tool MCP. Env schema hanya aditif.
+
+## D039 — 2026-09-25 — QA putaran 2 (A18): harga live dibatasi, IPO kontinu, rebalance manual
+- Harga dari sumber live dibatasi 5% per tick, agar pergantian sumber atau feed baru tidak melompatkan NAV dan memicu rebalance palsu. Shock manual tetap instan.
+- IPO:
+  - harga saham baru = harga pre-IPO × den/num;
+  - follower dimigrasi sebelum parent, dan follow loop menahan follower selama IPO berjalan;
+  - skrip menulis deployment lebih dulu dan bisa diulang.
+- Kreator bisa rebalance manual dari Manage (dibutuhkan index Hold, keeper-off, dan fase-out). Planner menjual seluruh saldo untuk target 0%.
+- MCP (lebih ketat; bentuk tool tidak berubah, kecuali pesan):
+  - aset yang sudah IPO dan benchmark ditolak di tool tulis;
+  - setoran minimum $1,10, join minimum $1;
+  - `agent_propose_update` hanya menerapkan proposal miliknya dan mempertahankan aset bersaldo di 0%.
+- `/api/config` menambah `faucetSol` (aditif).
+- `PRICE_MODE` default `live`.
+
+## D040 — 2026-09-25 — Nama produk: Stockbreak
+- Keputusan user: produk berganti nama dari "Stocklana" menjadi **Stockbreak**. "Stocklana" adalah nama hackathon-nya dan sudah dipakai 7+ repo lain (A17).
+- Yang diganti:
+  - nama yang terlihat user: `NEXT_PUBLIC_APP_NAME` default dan `.env`, UI/OG/metadata lewat `APP_NAME`, pesan sign-in;
+  - nama server MCP (`stockbreak`) beserta panduan dan snippet `claude mcp add`;
+  - README, DEMO, SUBMISSION, DEPLOY, ARCHITECTURE.
+- Yang sengaja dipertahankan:
+  - nama/URL hackathon "Stocklana";
+  - URL repo `viandwi24/stocklana` dan nama direktori;
+  - identifier internal: key localStorage `stocklana:*` (agar dev wallet dan tema user tidak hilang), nama project docker compose (volume DB), nama package, cache `__stocklanaDb`, kunci HMAC Blink;
+  - handle `stocklana` tetap dicadangkan, `stockbreak` ditambahkan.
+- Dokumen riwayat (PLAN, STATUS, DECISIONS lama, analisis) tidak ditulis ulang.
+
+## D041 — 2026-09-25 — Logo token resmi (gaya Raydium)
+- Permintaan user: aset ditampilkan dengan logonya supaya langsung dikenali, seperti ikon pasangan di Raydium.
+- Sumber: metadata token mainnet (read-only) lewat Jupiter Token API v2, diambil satu kali per hari oleh `/api/token-logos` dan di-cache 24 jam.
+  - xStocks memakai `xstocks-metadata.backed.fi`, PreStocks memakai `prestocks.com`, USDC memakai logo resmi.
+  - Saham hasil IPO memakai logo pre-IPO perusahaan yang sama.
+- `TickerMono` menampilkan logo bila tersedia, dan kembali ke tile ticker mono bila offline atau gambar gagal dimuat. Semua tempat yang memakainya otomatis ikut: alokasi, wizard, Manage, command palette.
+- `AssetStack` (logo bertumpuk, urut bobot) menggantikan index mark di baris tabel index. Index mark tetap dipakai di header halaman index dan di kartu.
+- Pengecualian §8 "monokrom": logo penerbit adalah informasi (identitas aset), bukan dekorasi. Tetap tanpa gradien/ilustrasi.

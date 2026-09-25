@@ -1,12 +1,19 @@
 import "server-only";
+import { existsSync } from "node:fs";
 import path from "node:path";
 /** Server context for route handlers and server components. */
-import { type Deployment, parseEnv, type ServerEnv, serverEnvSchema } from "@repo/config";
-import { REPO_ROOT, readDeployment } from "@repo/config/node";
+import {
+  type Deployment,
+  isKeypairJson,
+  parseEnv,
+  type ServerEnv,
+  serverEnvSchema,
+} from "@repo/config";
+import { REPO_ROOT, readDeployment, repoPath } from "@repo/config/node";
 import { type Db, getDb } from "@repo/db";
 import { createCtx, type SolanaCtx } from "@repo/sdk";
 import { loadSigner } from "@repo/sdk/node";
-import type { KeyPairSigner } from "@solana/kit";
+import { createKeyPairSignerFromBytes, type KeyPairSigner } from "@solana/kit";
 
 let envCache: ServerEnv | null = null;
 export function serverEnv(): ServerEnv {
@@ -46,10 +53,30 @@ export function requireDeployment(): Deployment {
   return d;
 }
 
+/**
+ * Whether this deployment can pay out the devnet SOL faucet: ADMIN_KEYPAIR_JSON
+ * (hosted, e.g. Vercel) or the keypair file at ADMIN_KEYPAIR_PATH (local).
+ */
+export function adminAvailable(): boolean {
+  const e = serverEnv();
+  if (e.ADMIN_KEYPAIR_JSON) return isKeypairJson(e.ADMIN_KEYPAIR_JSON);
+  return existsSync(repoPath(e.ADMIN_KEYPAIR_PATH));
+}
+
 let adminCache: Promise<KeyPairSigner> | null = null;
 /** Admin keypair (server only): devnet SOL faucet source. */
 export function admin(): Promise<KeyPairSigner> {
-  adminCache ??= loadSigner(serverEnv().ADMIN_KEYPAIR_PATH);
+  const e = serverEnv();
+  if (e.ADMIN_KEYPAIR_JSON && !isKeypairJson(e.ADMIN_KEYPAIR_JSON))
+    return Promise.reject(new Error("ADMIN_KEYPAIR_JSON is not a 64-byte keypair array"));
+  adminCache ??= (
+    e.ADMIN_KEYPAIR_JSON
+      ? createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(e.ADMIN_KEYPAIR_JSON) as number[]))
+      : loadSigner(e.ADMIN_KEYPAIR_PATH)
+  ).catch((err: unknown) => {
+    adminCache = null; // don't keep a failed load until the next cold start
+    throw err;
+  });
   return adminCache;
 }
 

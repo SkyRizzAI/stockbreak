@@ -110,6 +110,9 @@ export async function assess(
   if (custom) {
     const out = assetIndex(c, state, custom.sell);
     const inn = assetIndex(c, state, custom.buy);
+    if (out === inn) throw new Error("Sell and buy must be different assets.");
+    // An amount above the vault balance is capped by the planner (the mandate checks below
+    // then judge the capped swap), so the agent still learns why a large swap is rejected.
     plan = planPair(
       val,
       out,
@@ -124,6 +127,8 @@ export async function assess(
       keeper: false,
       now,
       spreadBps: spread,
+      // A keeper executor may not trade pre-IPO tokens: suggest what it can actually do.
+      excludePreIpo: keeper,
     });
     plan = p?.triggered ? p : null;
   }

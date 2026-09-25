@@ -4,6 +4,7 @@ Panduan demo langkah demi langkah. Semua aset & harga **simulasi**.
 
 - **Bagian A — Localnet (Dev Wallet)**: tanpa wallet eksternal, bisa time-travel.
 - **Bagian B — Devnet (Phantom)**: panduan uji manual di Chrome + Phantom. Ditulis di P11.
+- **Integrasi PreStocks**: sumber harga & data pre-IPO, cara menunjukkannya.
 - **Connect an AI agent**: MCP untuk Claude Code / Claude Desktop.
 
 ## A. Localnet dengan Dev Wallet
@@ -104,9 +105,27 @@ Menyalakan stack devnet sementara lalu menjalankan flow Dev Wallet (faucet, join
 - Faucet SOL in-app mentransfer dari wallet admin (0,2 SOL/permintaan, kuota harian 5 SOL, hanya bila saldo wallet < 1 SOL) dan bergantung pada saldo admin. Bila admin kehabisan SOL: isi SOL devnet langsung ke alamat Phantom lewat https://faucet.solana.com (pilih Devnet), atau isi ulang admin `9e1LHfXQpD8DbzbCpoAvrRbnhWA9cKsVJzQ35nCYhECh`.
 - `bun run verify:devnet` memakai ±1 SOL admin per run (wallet test didanai 0,1 SOL); kuota faucet harian yang dipakai test dilepas lagi setelahnya.
 
+## Integrasi PreStocks (pre-IPO)
+
+Semua aset pre-IPO (SPACEX-pre, OPENAI-pre, ANTHRP-pre, ANDURL-pre) adalah cermin token **PreStocks** (https://prestocks.com). Tidak ada token pre-IPO dari issuer lain. Token di localnet/devnet tetap simulasi; yang nyata hanya data harganya (dibaca read-only dari mainnet, tanpa transaksi).
+
+- **Sumber harga**: worker (`PRICE_MODE=live`) membaca API publik `https://prestocks.com/api/prestocks` lebih dulu dan mencocokkan `contract_address` dengan `mainnetMint`. Oracle memakai `tokenPrice`. Bila API gagal, worker turun ke Jupiter, lalu random walk. Sumber per aset tercatat di log worker (`[price] sources: SPACEX-pre=prestocks …`) dan di kolom `prices.source`. Aset IPO target (mis. SPCXx sebelum punya harga sendiri) mengikuti harga pre-IPO-nya.
+- **Data referensi**: `GET /api/prestocks` (cache server 60 detik, timeout 5 detik, fallback data lama). Isinya per aset: token price, mark price, implied valuation, premium/diskon = `tokenPrice / markPrice − 1`.
+- **Yang terlihat di UI**:
+  - tag **PreStocks** di ticker beranda, daftar aset wizard Create (plus catatan dengan link), dan tabel Allocation halaman index;
+  - panel **Pre-IPO · PreStocks** di halaman index yang memegang aset pre-IPO: harga token, mark, premium, implied valuation;
+  - catatan migrasi IPO yang meniru SpaceX (lihat di bawah).
+- **MCP**: `list_assets` menambah `issuer`, `issuerUrl`, `prestocksMarkPriceUsd`, `prestocksPremiumToMark`, `prestocksImpliedValuationUsd` untuk aset pre-IPO.
+
+**Cara menunjukkan saat demo:**
+1. Buka beranda: ticker menampilkan tag PreStocks pada aset pre-IPO.
+2. **Create**: pilih mis. ANTHRP-pre, lihat tag PreStocks dan catatan di bawah daftar aset.
+3. Buka index yang memegang pre-IPO (mis. hasil langkah 2): panel **Pre-IPO · PreStocks** menunjukkan mark price, premium/diskon (contoh 25 Sep 2026: SpaceX −19,7%, OpenAI +30,8%) dan implied valuation.
+4. Jalankan `bun run ipo -- --asset SPACEX-pre`: index pemegang bermigrasi ke SPCXx. Ceritanya sama dengan event nyata: setelah IPO SpaceX, token SpaceX PreStocks dikonversi ke saham tokenized SPCXx; pemegang langsung harus swap sebelum **12 Mar 2027 23:59 UTC** atau token hangus. Di Stockbreak vault memigrasikannya otomatis untuk semua pemegang index.
+
 ## Connect an AI agent
 
-Server MCP Stocklana berjalan otomatis saat `bun run dev` (HTTP `http://127.0.0.1:3333/mcp`, cek `http://127.0.0.1:3333/health`). Semua aset & harga **simulasi** (localnet/devnet). Server menolak cluster selain localnet/devnet dan tidak pernah mengembalikan isi env atau keypair.
+Server MCP Stockbreak berjalan otomatis saat `bun run dev` (HTTP `http://127.0.0.1:3333/mcp`, cek `http://127.0.0.1:3333/health`). Semua aset & harga **simulasi** (localnet/devnet). Server menolak cluster selain localnet/devnet dan tidak pernah mengembalikan isi env atau keypair.
 
 ### Dua mode
 | Mode | Kapan aktif | Tool |
@@ -119,11 +138,11 @@ Tool riset (selalu ada): `list_assets`, `list_indexes`, `get_index`, `get_index_
 ### Claude Code
 HTTP (stack `bun run dev` sedang berjalan):
 ```bash
-claude mcp add --transport http stocklana http://127.0.0.1:3333/mcp
+claude mcp add --transport http stockbreak http://127.0.0.1:3333/mcp
 ```
 Stdio (tanpa server HTTP; `.env` di root repo dibaca otomatis):
 ```bash
-claude mcp add --transport stdio stocklana -- bun /ABS/PATH/stocklana/apps/mcp/src/stdio.ts
+claude mcp add --transport stdio stockbreak -- bun /ABS/PATH/stocklana/apps/mcp/src/stdio.ts
 ```
 Mode human-in-the-loop saja: tambahkan `--env AGENT_KEYPAIR_PATH=` sebelum `--transport`.
 
@@ -132,7 +151,7 @@ Mode human-in-the-loop saja: tambahkan `--env AGENT_KEYPAIR_PATH=` sebelum `--tr
 ```json
 {
   "mcpServers": {
-    "stocklana": {
+    "stockbreak": {
       "type": "stdio",
       "command": "/ABS/PATH/.bun/bin/bun",
       "args": ["/ABS/PATH/stocklana/apps/mcp/src/stdio.ts"]

@@ -1,10 +1,11 @@
 /** simulate_rebalance: suggested swap + whether it passes the mandate, and why. */
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Address } from "@solana/kit";
+import { isAddress } from "@solana/kit";
 import * as z from "zod";
 import type { McpCtx } from "../ctx";
 import { assess, describe } from "../rebalance";
-import { BASE58, ok, resolveIndex, safe } from "../util";
+import { ok, resolveIndex, safe } from "../util";
 
 export function registerSimulateTool(s: McpServer, ctx: () => Promise<McpCtx>): void {
   s.registerTool(
@@ -17,7 +18,7 @@ export function registerSimulateTool(s: McpServer, ctx: () => Promise<McpCtx>): 
         index: z.string().describe("Index address or symbol"),
         executor: z
           .string()
-          .regex(BASE58)
+          .refine((v) => isAddress(v), "Not a Solana address")
           .optional()
           .describe("Wallet that would rebalance; defaults to the agent wallet"),
         sell: z.string().optional().describe("Custom swap: asset symbol to sell"),

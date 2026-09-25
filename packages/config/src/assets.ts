@@ -15,7 +15,7 @@ export interface AssetDef {
   mainnetMint?: string;
   /** Real ticker for Finnhub fallback (US stocks only). */
   ticker?: string;
-  priceSource: "jupiter" | "fixture";
+  priceSource: "prestocks" | "jupiter" | "fixture";
   /** USD price used when no live source is available. */
   fixturePrice: number;
   /** Pre-IPO only: symbol of the stock minted at the IPO event. */
@@ -25,6 +25,8 @@ export interface AssetDef {
   benchmark?: boolean;
   /** Rough market cap in $T for the "market-cap-like" weight preset (illustrative). */
   capT?: number;
+  /** Real-world issuer of the tokenized asset (pre-IPO: PreStocks only, D037). */
+  issuer?: { name: "PreStocks"; url: string };
 }
 
 const stock = (
@@ -62,10 +64,12 @@ const preIpo = (
   token2022: true,
   scaledUi: false,
   mainnetMint,
-  priceSource: "jupiter",
+  // PreStocks API first, Jupiter fallback, then random walk (D037).
+  priceSource: "prestocks",
   fixturePrice,
   ipoTarget,
   bootstrap: true,
+  issuer: { name: "PreStocks", url: "https://prestocks.com" },
 });
 
 export const ASSETS: readonly AssetDef[] = [

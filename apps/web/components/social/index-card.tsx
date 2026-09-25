@@ -6,7 +6,7 @@
  */
 import { cn } from "cn";
 import Link from "next/link";
-import { IndexGlyph, MARKS } from "@/components/data/glyph";
+import { IndexGlyph, MARKS, TickerMono } from "@/components/data/glyph";
 import { Delta, Usd } from "@/components/data/num";
 import { Sparkline } from "@/components/data/sparkline";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -168,7 +168,7 @@ export function IndexCard({
                 )}
               </Link>
               {index.creatorIsAgent ? " · AI" : ""}
-              {index.hasPreIpo ? " · Pre-IPO" : ""}
+              {index.hasPreIpo ? " · Pre-IPO (PreStocks)" : ""}
             </span>
           </div>
         </div>
@@ -182,11 +182,7 @@ export function IndexCard({
               key={a.mint}
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border bg-background px-2 text-xs"
             >
-              <span
-                className="size-2 rounded-full"
-                style={{ background: MARKS[a.tone] }}
-                aria-hidden
-              />
+              <TickerMono symbol={a.symbol} size={16} />
               <span className="mono">{a.symbol}</span>
               <span className="num text-muted-foreground">{(a.share * 100).toFixed(0)}%</span>
             </li>

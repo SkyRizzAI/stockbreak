@@ -147,11 +147,11 @@ export default function PortfolioPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={busy || c.owedCreatorShares <= 0}
+                      disabled={busy || (c.owedCreatorShares <= 0 && !c.accruing)}
                       onClick={() => void claim(c.pubkey, vault.FeeKind.Creator)}
                       data-testid={`claim-creator-${c.symbol}`}
                     >
-                      {c.owedCreatorShares > 0 ? "Claim" : "Nothing to claim"}
+                      {c.owedCreatorShares > 0 || c.accruing ? "Claim" : "Nothing to claim"}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -175,11 +175,11 @@ export default function PortfolioPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy || r.owedShares <= 0}
+                    disabled={busy || (r.owedShares <= 0 && !r.accruing)}
                     onClick={() => void claim(r.index, vault.FeeKind.Parent, r.parent)}
                     data-testid={`claim-royalty-${r.symbol}`}
                   >
-                    {r.owedShares > 0 ? "Claim" : "Nothing to claim"}
+                    {r.owedShares > 0 || r.accruing ? "Claim" : "Nothing to claim"}
                   </Button>
                 </span>
               </li>

@@ -49,6 +49,7 @@ import { loadSigner } from "@repo/sdk/node";
 import { type Address, type KeyPairSigner, lamports } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { argValue, chainCtx } from "./lib/chain";
+import { devnetDbUrl } from "./lib/devnet-db";
 import { log, run } from "./lib/proc";
 import { KEYS_DIR, ROOT } from "./lib/toolchain";
 
@@ -64,16 +65,8 @@ if (!d0)
 const d = d0;
 const symbolOf = (m: string) =>
   Object.entries(d.mints).find(([, v]) => v === m)?.[0] ?? m.slice(0, 4);
-const dbUrl =
-  c.cluster === "devnet"
-    ? (() => {
-        const u = new URL(
-          process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5434/app",
-        );
-        u.pathname = "/app_devnet";
-        return u.toString();
-      })()
-    : process.env.DATABASE_URL;
+// Devnet: the same database the devnet stack uses (hosted when DEVNET_DATABASE_URL is set).
+const dbUrl = c.cluster === "devnet" ? devnetDbUrl() : process.env.DATABASE_URL;
 const db = getDb(dbUrl);
 const mint = (s: string) => {
   const m = d.mints[s];

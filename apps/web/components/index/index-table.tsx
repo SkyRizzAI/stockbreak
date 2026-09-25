@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { UserLink } from "@/components/data/addr";
-import { IndexGlyph } from "@/components/data/glyph";
+import { AssetStack } from "@/components/data/glyph";
 import { Delta, Price, Usd } from "@/components/data/num";
 import { Sparkline } from "@/components/data/sparkline";
 import { Tag } from "@/components/data/states";
@@ -19,7 +19,7 @@ export function IndexTags({ i }: { i: IndexSummary }) {
   return (
     <span className="inline-flex flex-wrap gap-1">
       {i.creatorIsAgent ? <Tag>AI</Tag> : null}
-      {i.hasPreIpo ? <Tag>Pre-IPO</Tag> : null}
+      {i.hasPreIpo ? <Tag>Pre-IPO · PreStocks</Tag> : null}
       {i.followsParent ? (
         <Tag>Follows {i.parentSymbol ?? "parent"}</Tag>
       ) : i.parent ? (
@@ -31,6 +31,12 @@ export function IndexTags({ i }: { i: IndexSummary }) {
 }
 
 type RetKey = "ret24h" | "ret7d" | "ret30d" | "retAll";
+
+const holdings = (i: IndexSummary) =>
+  [...i.assets]
+    .filter((a) => a.targetWeightBps > 0)
+    .sort((a, b) => b.targetWeightBps - a.targetWeightBps)
+    .map((a) => a.symbol);
 
 export function IndexTable({
   rows,
@@ -67,9 +73,12 @@ export function IndexTable({
                 {rank ? <TableCell className="num text-muted-foreground">{n + 1}</TableCell> : null}
                 <TableCell>
                   <Link href={`/i/${i.pubkey}`} className="flex items-center gap-3">
-                    <IndexGlyph
-                      pubkey={i.pubkey}
-                      weights={i.assets.map((a) => a.targetWeightBps)}
+                    {/* Holdings at a glance, largest weight first (like pool pair icons). */}
+                    <AssetStack
+                      symbols={holdings(i)}
+                      size={26}
+                      max={4}
+                      className="w-[84px] shrink-0"
                     />
                     <span className="flex min-w-0 flex-col">
                       <span className="flex items-center gap-2 font-medium">
@@ -118,11 +127,7 @@ export function IndexTable({
               data-testid="index-row-mobile"
             >
               {rank ? <span className="num w-5 text-xs text-muted-foreground">{n + 1}</span> : null}
-              <IndexGlyph
-                pubkey={i.pubkey}
-                weights={i.assets.map((a) => a.targetWeightBps)}
-                size={28}
-              />
+              <AssetStack symbols={holdings(i)} size={22} max={3} className="w-[62px] shrink-0" />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm font-semibold">{i.name}</span>
                 <span className="mono text-xs text-muted-foreground">

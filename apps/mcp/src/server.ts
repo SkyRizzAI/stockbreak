@@ -9,10 +9,10 @@ import { registerSimulateTool } from "./tools/simulate";
 
 export function createServer(): McpServer {
   const s = new McpServer(
-    { name: "stocklana", version: "0.1.0" },
+    { name: "stockbreak", version: "0.1.0" },
     {
       instructions:
-        "Stocklana: simulated tokenized stock indexes on Solana localnet/devnet. Read docs://guide first. Use build_* tools to prepare actions the user signs; agent_* tools (when present) act with the agent's own wallet within program-enforced limits.",
+        "Stockbreak: simulated tokenized stock indexes on Solana localnet/devnet. Read docs://guide first. Use build_* tools to prepare actions the user signs; agent_* tools (when present) act with the agent's own wallet within program-enforced limits.",
     },
   );
   registerReadTools(s, getCtx);
@@ -23,7 +23,7 @@ export function createServer(): McpServer {
   s.registerResource(
     "guide",
     "docs://guide",
-    { title: "How to use Stocklana tools", mimeType: "text/markdown" },
+    { title: "How to use Stockbreak tools", mimeType: "text/markdown" },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: GUIDE }] }),
   );
   return s;

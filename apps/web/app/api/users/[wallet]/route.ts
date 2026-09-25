@@ -18,6 +18,7 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/users/[walle
 const RESERVED = new Set([
   "admin",
   "stocklana",
+  "stockbreak",
   "keeper",
   "system",
   "support",

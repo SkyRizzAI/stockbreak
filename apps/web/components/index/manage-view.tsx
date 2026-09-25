@@ -43,6 +43,7 @@ import { useRun } from "@/lib/tx";
 import type { IndexDetail, StrategyModeName } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
 import { pendingLines, useChainNow } from "./pending-update";
+import { RebalanceNow } from "./rebalance-now";
 
 /** Program limits (anchor/programs/index_vault/src/constants.rs), in percent. */
 const LIMITS = {
@@ -322,7 +323,11 @@ function Propose({ d }: { d: IndexDetail }) {
                     variant="ghost"
                     size="sm"
                     disabled={r.funded}
-                    title={r.funded ? "Set to 0% and rebalance before removing" : "Remove"}
+                    title={
+                      r.funded
+                        ? "Set to 0%, apply, then use Rebalance now before removing"
+                        : "Remove"
+                    }
                     onClick={() => setRows((rs) => rs.filter((x) => x.mint !== r.mint))}
                   >
                     Remove
@@ -679,6 +684,10 @@ export function ManageView({ pubkey }: { pubkey: string }) {
             Claim
           </Button>
         </div>
+      </Section>
+
+      <Section title="Rebalance">
+        <RebalanceNow d={d} signer={signer} />
       </Section>
 
       <Section title="Scheduled update">

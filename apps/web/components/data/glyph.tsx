@@ -1,8 +1,11 @@
+"use client";
 /**
  * Deterministic index identity (§8.3, refs \"Index mark\"): stripes sized by
  * weight in the four greens.
  */
 import { cn } from "cn";
+import { useState } from "react";
+import { useTokenLogos } from "@/lib/api";
 
 function hash(s: string): number {
   let h = 2166136261;
@@ -63,7 +66,38 @@ export function IndexGlyph({
   );
 }
 
-export function TickerMono({ symbol, className }: { symbol: string; className?: string }) {
+/**
+ * An asset's official token logo (xStocks / PreStocks / USDC, from /api/token-logos),
+ * falling back to a mono ticker tile when offline or the image fails.
+ */
+export function TickerMono({
+  symbol,
+  className,
+  size = 24,
+}: {
+  symbol: string;
+  className?: string;
+  size?: number;
+}) {
+  const url = useTokenLogos().data?.logos[symbol];
+  const [broken, setBroken] = useState(false);
+  if (url && !broken)
+    return (
+      // biome-ignore lint/performance/noImgElement: remote issuer logos, tiny and cached
+      <img
+        src={url}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        onError={() => setBroken(true)}
+        className={cn(
+          "shrink-0 rounded-full bg-surface object-cover ring-1 ring-border",
+          className,
+        )}
+        style={{ width: size, height: size }}
+      />
+    );
   const label = symbol
     .replace(/x$|-pre$/i, "")
     .slice(0, 4)
@@ -77,6 +111,42 @@ export function TickerMono({ symbol, className }: { symbol: string; className?: 
       aria-hidden
     >
       {label}
+    </span>
+  );
+}
+
+/** Overlapping token logos (Raydium-style pair icons) for an index's holdings. */
+export function AssetStack({
+  symbols,
+  size = 20,
+  max = 4,
+  className,
+}: {
+  symbols: string[];
+  size?: number;
+  max?: number;
+  className?: string;
+}) {
+  const shown = symbols.slice(0, max);
+  const rest = symbols.length - shown.length;
+  return (
+    <span
+      role="img"
+      className={cn("inline-flex items-center", className)}
+      aria-label={symbols.join(", ")}
+    >
+      {shown.map((s, i) => (
+        <span
+          key={s}
+          className="rounded-full ring-2 ring-background"
+          style={{ marginLeft: i ? -size / 3 : 0, zIndex: shown.length - i }}
+        >
+          <TickerMono symbol={s} size={size} className="min-w-0" />
+        </span>
+      ))}
+      {rest > 0 ? (
+        <span className="num ml-1 text-[11px] text-muted-foreground">+{rest}</span>
+      ) : null}
     </span>
   );
 }

@@ -27,6 +27,16 @@ for (const scheme of ["light", "dark"] as const)
   for (const width of [375, 1280])
     test.describe(`${scheme}-${width}`, () => {
       test.use({ colorScheme: scheme, viewport: { width, height: 900 } });
+      // Dark is the default whatever the OS says (D034); light is a stored choice.
+      test.beforeEach(async ({ page }) => {
+        await page.addInitScript((t) => {
+          try {
+            localStorage.setItem("stocklana:theme", t);
+          } catch {
+            // storage unavailable
+          }
+        }, scheme);
+      });
       const tag = `${scheme}-${width}`;
 
       test("pages", async ({ page }) => {

@@ -1,9 +1,11 @@
 "use client";
-import { CAP_T } from "@repo/config";
+import { CAP_T, PRESTOCKS_URL } from "@repo/config";
 import {
   createIndexFlow,
   indexPda,
+  joinWithHeld,
   nextIndexId,
+  PartialZapError,
   sendTx,
   setManagersIx,
   vault,
@@ -21,6 +23,7 @@ import { AllocationBar, AllocationLegend } from "@/components/data/allocation";
 import { DecimalInput } from "@/components/data/decimal-input";
 import { IndexGlyph, TickerMono } from "@/components/data/glyph";
 import { Price } from "@/components/data/num";
+import { PrestocksTag } from "@/components/data/prestocks";
 import { SimulatedBadge } from "@/components/data/states";
 import { LinkButton } from "@/components/link-button";
 import { openConnect, useBalances } from "@/components/shell/wallet-button";
@@ -267,6 +270,8 @@ function Wizard() {
   const [thesis, setThesis] = useState("");
   const [manager, setManager] = useState("");
   const [follow, setFollow] = useState(false);
+  /** The deposit's swaps landed but its join did not: finish with the assets held. */
+  const [heldDeposit, setHeldDeposit] = useState(false);
   const [deposit, setDeposit] = useState("1000");
   // Set once the index exists on chain: the wizard never creates a second one.
   const [created, setCreated] = useState<Created | null>(null);
@@ -465,12 +470,19 @@ function Wizard() {
         track("manager", { step: "manager", done: 1, total: 1, signature });
       }
       stage = "deposit";
-      if (depositNum > 0)
+      const onProgress = (p: Parameters<typeof track>[1]) =>
+        track("deposit", { ...p, step: `deposit-${p.step}` });
+      if (heldDeposit)
+        // The swaps already went through: deposit what the wallet holds, never swap twice.
+        await joinWithHeld(ctx, signer, c.index, { lookupTable: c.lookupTable, onProgress });
+      else if (depositNum > 0)
         await zapIn(ctx, signer, c.index, usdc, BigInt(Math.round(depositNum * 1e6)), {
           lookupTable: c.lookupTable,
-          onProgress: (p) => track("deposit", { ...p, step: `deposit-${p.step}` }),
+          onProgress,
         });
+      setHeldDeposit(false);
     } catch (e) {
+      if (e instanceof PartialZapError && e.stage === "join") setHeldDeposit(true);
       setFailed(stage);
       throw e;
     }
@@ -696,7 +708,9 @@ function Wizard() {
               <Button
                 size="lg"
                 disabled={
-                  busy || depositError !== null || (failed === "deposit" && depositNum <= 0)
+                  busy ||
+                  (!heldDeposit &&
+                    (depositError !== null || (failed === "deposit" && depositNum <= 0)))
                 }
                 onClick={() => void retry()}
                 data-testid="retry-deposit"
@@ -707,7 +721,9 @@ function Wizard() {
                     ? depositNum > 0
                       ? "Retry manager and deposit"
                       : "Retry manager"
-                    : "Retry deposit"}
+                    : heldDeposit
+                      ? "Finish deposit with swapped assets"
+                      : "Retry deposit"}
               </Button>
               <LinkButton href={`/i/${created.index}`} variant="outline" size="lg">
                 Open index
@@ -786,7 +802,10 @@ function Wizard() {
                     >
                       <TickerMono symbol={a.symbol} />
                       <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                        <span className="mono text-sm">{a.symbol}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="mono text-sm">{a.symbol}</span>
+                          {a.issuer?.name === "PreStocks" ? <PrestocksTag link={false} /> : null}
+                        </span>
                         <span className="text-xs text-muted-foreground">
                           {a.name}
                           {a.kind === "PreIpo"
@@ -810,6 +829,21 @@ function Wizard() {
                 );
               })}
             </ul>
+            {filtered.some((a) => a.kind === "PreIpo") ? (
+              <p className="text-xs text-muted-foreground">
+                Pre-IPO assets mirror{" "}
+                <a
+                  href={PRESTOCKS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  PreStocks
+                </a>{" "}
+                tokens, priced from the PreStocks API. At IPO the index migrates them to the listed
+                stock automatically. Simulated.
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -1133,6 +1167,13 @@ function Wizard() {
                       ? `Uses ${parentLabel}'s weights. The keeper copies every change ${parentLabel} makes.`
                       : `Off: your weights stay as set. On: weights copy ${parentLabel} and sync automatically.`}
                   </span>
+                  {follow && (mode === "Manual" || !keeper) ? (
+                    <span className="text-xs text-warn">
+                      Targets will sync, but with {mode === "Manual" ? "Hold" : "the keeper off"}{" "}
+                      your holdings won't move by themselves. Use Manage → Rebalance now, or allow
+                      the keeper on the Strategy step.
+                    </span>
+                  ) : null}
                 </span>
                 <Switch id="follow" checked={follow} onCheckedChange={setFollowing} />
               </div>

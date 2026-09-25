@@ -26,6 +26,22 @@ export interface ClientConfig {
     listed: boolean;
     benchmark: boolean;
     ipoTarget: string | null;
+    /** Absent on older web deployments. */
+    issuer?: { name: string; url: string } | null;
+  }[];
+}
+
+/** `/api/prestocks`: live PreStocks reference data per pre-IPO asset (read-only). */
+export interface PrestocksResponse {
+  available: boolean;
+  fetchedAt: string | null;
+  rows: {
+    symbol: string;
+    url: string;
+    tokenPrice: number;
+    markPrice: number | null;
+    impliedValuation: number | null;
+    premium: number | null;
   }[];
 }
 

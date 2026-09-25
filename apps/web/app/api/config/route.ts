@@ -1,5 +1,5 @@
 import { ASSETS, CLUSTER_PARAMS } from "@repo/config";
-import { deployment, serverEnv } from "@/lib/server/ctx";
+import { adminAvailable, deployment, serverEnv } from "@/lib/server/ctx";
 import { guard } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,8 @@ export function GET() {
         faucetMaxUsdc: CLUSTER_PARAMS[e.CLUSTER].faucetMaxUsdc.toString(),
       },
       faucetSolPerRequest: e.FAUCET_SOL_PER_REQUEST,
+      /** false on a hosted deployment without the admin key: send users to faucet.solana.com. */
+      faucetSol: e.CLUSTER === "localnet" || adminAvailable(),
       assets: ASSETS.filter((a) => d?.mints[a.symbol]).map((a) => ({
         symbol: a.symbol,
         name: a.name,
@@ -31,6 +33,7 @@ export function GET() {
         benchmark: !!a.benchmark,
         ipoTarget: a.ipoTarget ?? null,
         listed: !d?.ipos[a.symbol],
+        issuer: a.issuer ?? null,
       })),
       ipos: d?.ipos ?? {},
     };

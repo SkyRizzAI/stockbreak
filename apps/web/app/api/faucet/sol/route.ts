@@ -3,7 +3,7 @@ import { ensureSol, sendTx, solBalance } from "@repo/sdk";
 import { type Address, lamports } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import * as z from "zod";
-import { admin, chain, db, serverEnv } from "@/lib/server/ctx";
+import { admin, adminAvailable, chain, db, serverEnv } from "@/lib/server/ctx";
 import { fail, guard, isAddress } from "@/lib/server/http";
 
 const Body = z.object({ wallet: z.string() });
@@ -23,6 +23,11 @@ export async function POST(req: Request) {
       await recordFaucet(db(), { wallet, kind: "SOL", amount: 2_000_000_000n, cluster: e.CLUSTER });
       return { ok: true, sol: 2 };
     }
+    if (!adminAvailable())
+      return fail(
+        503,
+        "The SOL faucet is off on this deployment. Get devnet SOL at faucet.solana.com, then come back for USDC.",
+      );
     // One devnet payout at a time: check-then-send must not race (limits and daily cap).
     const prev = queue;
     let release = () => {};

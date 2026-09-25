@@ -10,6 +10,7 @@ import {
   ata,
   chainClock,
   createIndexFlow,
+  describeError,
   fetchIndex,
   fetchTokenBalances,
   indexPda,
@@ -32,7 +33,17 @@ import * as z from "zod";
 import type { McpCtx } from "../ctx";
 import { assess, describe, ensureLookupTable } from "../rebalance";
 import { createSchema, feesPatchSchema, strategyPatchSchema, toCreateParams } from "../spec";
-import { bps, checkUsdcLimit, mintFor, ok, resolveIndex, safe, toBps, usd } from "../util";
+import {
+  bps,
+  checkUsdcLimit,
+  investableMint,
+  mintFor,
+  ok,
+  resolveIndex,
+  safe,
+  toBps,
+  usd,
+} from "../util";
 
 const MODE = {
   Manual: vault.StrategyMode.Manual,
@@ -126,7 +137,7 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
       const c = await ctx();
       const a = agentOf(c);
       const message = new TextEncoder().encode(
-        `Stocklana agent registration\nwallet: ${a.address}\nname: ${name}\nts: ${Date.now()}`,
+        `Stockbreak agent registration\nwallet: ${a.address}\nname: ${name}\nts: ${Date.now()}`,
       );
       const sig = await signBytes(a.keyPair.privateKey, message);
       if (!(await verifySignature(a.keyPair.publicKey, sig, message)))
@@ -261,6 +272,11 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
       if (custom && (!custom.sell || !custom.buy || !(custom.amountUsd > 0)))
         throw new Error("A custom swap needs sell, buy and amountUsd.");
       const as = await assess(c, ref.pubkey as Address, a.address, custom);
+      // As documented: only indexes the agent created or manages (keeper duty is the platform's).
+      if (as.role === "keeper")
+        throw new Error(
+          `The agent is not the creator or a manager of ${ref.symbol}. Ask its creator to add the agent as a manager.`,
+        );
       if (!as.allowed || !as.plan) {
         const why = [
           ...as.checks.filter((x) => !x.ok).map((x) => x.detail),
@@ -312,11 +328,25 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
         throw new Error(`Only the creator can propose updates to ${ref.symbol}.`);
       if (!assets && !strategy && !fees) throw new Error("Nothing to update.");
       const weights = assets ? toBps(assets) : [];
+      let nextAssets = assets?.map((x, i) => ({
+        mint: investableMint(c, x.symbol),
+        weightBps: weights[i] as number,
+      }));
+      // The vault cannot drop an asset it still holds: keep omitted funded assets at 0%
+      // (the keeper then sells them down) instead of failing at apply time.
+      const kept: string[] = [];
+      if (nextAssets)
+        for (const e of st.assets)
+          if (e.balance > 0n && !nextAssets.some((x) => x.mint === e.mint)) {
+            nextAssets = [...nextAssets, { mint: e.mint, weightBps: 0 }];
+            kept.push(c.symbolOf(e.mint) ?? e.mint.slice(0, 4));
+          }
+      if (nextAssets && nextAssets.length > 10)
+        throw new Error(
+          `Too many assets: ${kept.join(", ")} still hold a balance and must stay (at 0%) until sold. Keep at most ${10 - kept.length} new targets.`,
+        );
       const ix = await proposeUpdateIx(a, ref.pubkey as Address, st, {
-        assets: assets?.map((x, i) => ({
-          mint: mintFor(c, x.symbol),
-          weightBps: weights[i] as number,
-        })),
+        assets: nextAssets,
         fees: fees
           ? {
               mgmtFeeBps:
@@ -352,20 +382,43 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
             }
           : undefined,
       });
+      const key = (x: typeof st) =>
+        x.pendingUpdate.__option === "Some"
+          ? JSON.stringify(x.pendingUpdate.value, (_k, v) => (typeof v === "bigint" ? `${v}` : v))
+          : "";
       const proposed = await sendTx(c, a, [ix]);
       const after = await fetchIndex(c, ref.pubkey as Address);
+      // A fee-only cut applies immediately and leaves any older pending update untouched:
+      // only a pending update this call created (or replaced) may be applied below.
+      if (!key(after) || key(after) === key(st))
+        return ok(`Fee change on ${ref.symbol} is live (fee cuts apply immediately).`, {
+          proposed: tx(c, proposed),
+          pendingUnchanged: !!key(after),
+        });
       const eta =
         after.pendingUpdate.__option === "Some" ? Number(after.pendingUpdate.value.eta) : 0;
       const now = Number(await chainClock(c));
-      if (eta && eta <= now) {
-        const applied = await sendTx(c, a, [await applyUpdateIx(a, ref.pubkey as Address, after)], {
-          computeUnitLimit: 600_000,
-        });
-        return ok(`Updated ${ref.symbol} (no timelock on ${c.env.CLUSTER}).`, {
-          proposed: tx(c, proposed),
-          applied: tx(c, applied),
-          strategyMode: MODE_NAME[after.strategy.mode],
-        });
+      if (eta <= now) {
+        try {
+          const applied = await sendTx(
+            c,
+            a,
+            [await applyUpdateIx(a, ref.pubkey as Address, after)],
+            { computeUnitLimit: 600_000 },
+          );
+          return ok(
+            `Updated ${ref.symbol} (no timelock on ${c.env.CLUSTER}).${kept.length ? ` Kept ${kept.join(", ")} at 0% until the vault sells them.` : ""}`,
+            {
+              proposed: tx(c, proposed),
+              applied: tx(c, applied),
+              strategyMode: MODE_NAME[after.strategy.mode],
+            },
+          );
+        } catch (e) {
+          throw new Error(
+            `Proposed an update to ${ref.symbol}, but applying it failed: ${describeError(e)}. The proposal is still pending; propose a corrected update (it replaces this one) or have the creator cancel it in Manage.`,
+          );
+        }
       }
       return ok(
         `Proposed an update to ${ref.symbol}. It can be applied after ${new Date(eta * 1000).toISOString()}.`,

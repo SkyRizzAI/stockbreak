@@ -29,6 +29,8 @@ export interface PlanOptions {
   keeper: boolean;
   now: bigint;
   spreadBps: number;
+  /** Plan without pre-IPO assets without applying keeper triggers (simulating a keeper). */
+  excludePreIpo?: boolean;
 }
 
 export function triggerMet(
@@ -75,7 +77,7 @@ export function planRebalance(
   }
   const eligible = val.assets
     .map((a, i) => ({ a, i, gap: a.weightBps - a.targetBps }))
-    .filter((x) => !(o.keeper && x.a.entry.kind === vault.AssetKind.PreIpo));
+    .filter((x) => !((o.keeper || o.excludePreIpo) && x.a.entry.kind === vault.AssetKind.PreIpo));
   if (eligible.length < 2) return null;
   const over = eligible.reduce((m, x) => (x.gap > m.gap ? x : m));
   const under = eligible.reduce((m, x) => (x.gap < m.gap ? x : m));
@@ -90,6 +92,9 @@ export function planRebalance(
     move,
     o.spreadBps,
     o.keeper ? trig.reason : "manual (creator/manager)",
+    // Phasing out (target 0%): sell every unit, or rounding leaves dust that keeps the
+    // asset "funded" forever (it could never be removed from the index).
+    over.a.targetBps === 0 && excess <= deficit,
   );
 }
 
@@ -104,6 +109,7 @@ export function planPair(
   valueMicroUsd: bigint,
   spreadBps: number,
   reason = "custom",
+  sellAll = false,
 ): RebalancePlan | null {
   const oa = val.assets[out];
   const ia = val.assets[inn];
@@ -113,7 +119,7 @@ export function planPair(
       price: oa.feed.price,
       expo: oa.feed.expo,
     }) ?? 0n;
-  if (amountOut > oa.entry.balance) amountOut = oa.entry.balance;
+  if (amountOut > oa.entry.balance || sellAll) amountOut = oa.entry.balance;
   if (amountOut === 0n) return null;
   const expectedIn =
     math.swapOut(

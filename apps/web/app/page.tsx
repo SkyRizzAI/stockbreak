@@ -1,12 +1,14 @@
 "use client";
 import Link from "next/link";
+import { TickerMono } from "@/components/data/glyph";
 import { Delta, Price, toneOf } from "@/components/data/num";
+import { PrestocksTag } from "@/components/data/prestocks";
 import { ErrorState, RowsSkeleton, Section, SimulatedBadge } from "@/components/data/states";
 import { IndexTable } from "@/components/index/index-table";
 import { LinkButton } from "@/components/link-button";
 import { CreatorCard } from "@/components/pages/creator-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useActivity, useCreatorsBoard, useIndexes, usePrices } from "@/lib/api";
+import { useActivity, useConfig, useCreatorsBoard, useIndexes, usePrices } from "@/lib/api";
 import { ago, pct } from "@/lib/format";
 import type { IndexSummary } from "@/lib/types";
 
@@ -19,10 +21,13 @@ function median(xs: number[]): number | null {
 
 function TickerStrip() {
   const prices = usePrices();
+  const cfg = useConfig();
   if (prices.isLoading) return <Skeleton className="h-14 w-full" />;
   if (prices.isError)
     return <ErrorState message="Prices are unavailable." onRetry={() => void prices.refetch()} />;
-  const list = (prices.data ?? []).filter((p) => p.symbol !== "USDC");
+  // Pre-IPO tokens that already converted at their IPO are no longer tradable: hide them.
+  const delisted = new Set((cfg.data?.assets ?? []).filter((a) => !a.listed).map((a) => a.symbol));
+  const list = (prices.data ?? []).filter((p) => p.symbol !== "USDC" && !delisted.has(p.symbol));
   if (!list.length) return null;
   // One joined strip (refs Markets): mono ticker, figure, day change; scrolls on small screens.
   return (
@@ -30,7 +35,11 @@ function TickerStrip() {
       <ul className="flex min-w-max divide-x divide-hairline" aria-label="Asset prices">
         {list.map((p) => (
           <li key={p.symbol} className="flex min-w-40 flex-1 flex-col gap-1 px-4 py-3.5">
-            <span className="mono text-xs text-muted-foreground">{p.symbol}</span>
+            <span className="flex items-center gap-1.5">
+              <TickerMono symbol={p.symbol} size={18} />
+              <span className="mono text-xs text-muted-foreground">{p.symbol}</span>
+              {p.kind === "PreIpo" ? <PrestocksTag /> : null}
+            </span>
             <span className="flex items-baseline gap-2">
               <Price value={p.price} className="text-[17px] font-semibold" />
               <Delta value={p.change24h} className="text-xs" />

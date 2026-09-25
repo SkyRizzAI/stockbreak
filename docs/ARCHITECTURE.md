@@ -1,6 +1,6 @@
 # Arsitektur
 
-Stocklana adalah platform index saham tokenized di Solana (localnet/devnet, semua aset simulasi). Dokumen ini menjelaskan bagian-bagian sistem dan bagaimana mereka terhubung. Rincian kontrak ada di `PLAN.md` §5–§7, keputusan di `DECISIONS.md`.
+Stockbreak adalah platform index saham tokenized di Solana (localnet/devnet, semua aset simulasi). Dokumen ini menjelaskan bagian-bagian sistem dan bagaimana mereka terhubung. Rincian kontrak ada di `PLAN.md` §5–§7, keputusan di `DECISIONS.md`.
 
 ## Gambaran
 

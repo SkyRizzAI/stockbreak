@@ -30,7 +30,23 @@ function isRateLimited(e: unknown): boolean {
   );
 }
 
-/** Default transport + retry with jittered exponential backoff on 429. */
+/**
+ * Transient failures worth retrying: 5xx gateway errors and network drops (fetch threw,
+ * socket closed). Safe for every call we make: reads are idempotent, and resending the
+ * same signed transaction yields the same signature (no double spend).
+ */
+function isTransient(e: unknown): boolean {
+  if (isSolanaError(e, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
+    const code = (e.context as { statusCode?: number }).statusCode ?? 0;
+    return code === 502 || code === 503 || code === 504;
+  }
+  const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+  return /fetch failed|Failed to fetch|NetworkError|socket|ECONNRESET|ECONNREFUSED|ETIMEDOUT|Unable to connect|network/i.test(
+    msg,
+  );
+}
+
+/** Default transport + retry with jittered exponential backoff on 429 and transient errors. */
 function retryingTransport(url: string): ReturnType<typeof createDefaultRpcTransport> {
   const base = createDefaultRpcTransport({ url });
   return (async (req) => {
@@ -38,7 +54,8 @@ function retryingTransport(url: string): ReturnType<typeof createDefaultRpcTrans
       try {
         return await base(req);
       } catch (e) {
-        if (attempt >= 6 || !isRateLimited(e)) throw e;
+        const limited = isRateLimited(e);
+        if (!(limited ? attempt < 6 : attempt < 3 && isTransient(e))) throw e;
         const delay = 250 * 2 ** attempt + Math.random() * 250;
         await new Promise((r) => setTimeout(r, delay));
       }
@@ -75,8 +92,11 @@ export async function chainClock(ctx: SolanaCtx): Promise<bigint> {
       .send();
     if (value) {
       // Clock: slot u64, epoch_start_timestamp i64, epoch u64, leader_schedule_epoch u64, unix_timestamp i64
-      const bytes = Buffer.from(value.data[0], "base64");
-      return bytes.readBigInt64LE(32);
+      // No Buffer: this also runs in the browser (it silently fell back to wall time there).
+      const raw = atob(value.data[0]);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      return new DataView(bytes.buffer).getBigInt64(32, true);
     }
   } catch {
     // fall through

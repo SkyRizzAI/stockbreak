@@ -1,5 +1,6 @@
 /** Read-only research tools (PLAN §7.6). Data comes from the web API so numbers match the UI. */
 import type { McpServer } from "@modelcontextprotocol/server";
+import { isAddress } from "@solana/kit";
 import * as z from "zod";
 import type { McpCtx } from "../ctx";
 import { bps, ok, pct, resolveIndex, safe, usd } from "../util";
@@ -10,6 +11,7 @@ import type {
   IndexDetail,
   IndexSummary,
   Portfolio,
+  PrestocksResponse,
   SeriesPoint,
 } from "./types";
 
@@ -36,21 +38,40 @@ export function summarize(i: IndexSummary) {
   };
 }
 
+/** PreStocks mark price / implied valuation / premium for one pre-IPO symbol, if known. */
+function prestocksFields(pre: PrestocksResponse | null, symbol: string) {
+  const r = pre?.rows.find((x) => x.symbol === symbol);
+  if (!r) return {};
+  return {
+    prestocksTokenPriceUsd: r.tokenPrice,
+    prestocksMarkPriceUsd: r.markPrice,
+    prestocksPremiumToMark: r.premium === null ? null : pct(r.premium),
+    prestocksImpliedValuationUsd:
+      r.impliedValuation === null ? null : Math.round(r.impliedValuation),
+  };
+}
+
 export function registerReadTools(s: McpServer, ctx: () => Promise<McpCtx>): void {
   s.registerTool(
     "list_assets",
     {
       title: "List assets",
       description:
-        "List the tokenized stocks, pre-IPO tokens and USDC that indexes can hold, with current prices. All assets and prices are simulated (localnet/devnet), fed from real market data where available.",
+        "List the tokenized stocks, pre-IPO tokens (PreStocks) and USDC that indexes can hold, with current prices. Pre-IPO rows include the PreStocks mark price, premium to mark and implied valuation when available. All assets and prices are simulated (localnet/devnet), fed from real market data where available.",
       inputSchema: z.object({}),
       annotations: RO,
     },
     safe(async () => {
       const c = await ctx();
-      const [prices, cfg] = await Promise.all([
+      const [prices, cfg, pre] = await Promise.all([
         c.web<AssetPrice[]>("/api/prices"),
         c.web<ClientConfig>("/api/config"),
+        // Optional enrichment: PreStocks being unreachable must not fail the tool.
+        // Optional enrichment: never hold the tool up for a slow PreStocks refresh.
+        Promise.race([
+          c.web<PrestocksResponse>("/api/prestocks").catch(() => null),
+          new Promise<null>((r) => setTimeout(() => r(null), 1_500)),
+        ]),
       ]);
       const rows = cfg.assets
         .filter((a) => a.listed && !a.benchmark)
@@ -64,10 +85,12 @@ export function registerReadTools(s: McpServer, ctx: () => Promise<McpCtx>): voi
             change24h: pct(p?.change24h),
             priceSource: p?.source ?? null,
             ...(a.ipoTarget ? { becomesOnIpo: a.ipoTarget } : {}),
+            ...(a.issuer ? { issuer: a.issuer.name, issuerUrl: a.issuer.url } : {}),
+            ...prestocksFields(pre, a.symbol),
           };
         });
       return ok(
-        `${rows.length} assets on ${cfg.cluster}. Prices are simulated. Pre-IPO tokens migrate to the listed stock on an IPO event.`,
+        `${rows.length} assets on ${cfg.cluster}. Prices are simulated. Pre-IPO tokens mirror PreStocks tokens (priced from the PreStocks API, read-only) and migrate to the listed stock on an IPO event.`,
         rows,
       );
     }),
@@ -268,6 +291,7 @@ export function registerReadTools(s: McpServer, ctx: () => Promise<McpCtx>): voi
       const c = await ctx();
       const w = wallet ?? c.agent?.address;
       if (!w) throw new Error("Pass a wallet address (agent wallet mode is off).");
+      if (!isAddress(w)) throw new Error("Not a Solana address.");
       const p = await c.web<Portfolio>(`/api/portfolio/${w}`);
       return ok(
         `Wallet ${w}: ${usd(p.totalUsd)} across ${p.positions.length} positions, PnL ${usd(p.pnlUsd)}.`,

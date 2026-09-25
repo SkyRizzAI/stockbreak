@@ -129,7 +129,6 @@ function ensureEnv(): void {
       set("MAINNET_READ_RPC_URL", helius);
       set("DEVNET_RPC_URL", helius.replace("mainnet.helius-rpc.com", "devnet.helius-rpc.com"));
     }
-    if (extra.get("JUPITER_API_KEY")) set("PRICE_MODE", "live");
     log(S, "imported API keys from .env.test (values not printed)");
   }
   writeFileSync(envPath, text, { mode: 0o600 });

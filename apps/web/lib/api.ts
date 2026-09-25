@@ -13,6 +13,7 @@ import type {
   IndexSummary,
   Portfolio,
   PostItem,
+  PrestocksResponse,
   Profile,
   SeriesPoint,
 } from "./types";
@@ -49,6 +50,7 @@ export interface ClientConfig {
     cloneRoyaltyBps: number;
   };
   faucetSolPerRequest: number;
+  faucetSol?: boolean;
   assets: {
     symbol: string;
     name: string;
@@ -60,6 +62,7 @@ export interface ClientConfig {
     benchmark: boolean;
     ipoTarget: string | null;
     listed: boolean;
+    issuer: { name: string; url: string } | null;
   }[];
   ipos: Record<string, { newSymbol: string; newMint: string }>;
 }
@@ -75,6 +78,24 @@ export const usePrices = () =>
     queryKey: ["prices"],
     queryFn: () => api<AssetPrice[]>("/api/prices"),
     refetchInterval: 15_000,
+  });
+
+/** PreStocks mark price / implied valuation / premium (server-cached 60 s). */
+/** Official token logos by symbol ({} offline: callers fall back to the ticker glyph). */
+export const useTokenLogos = () =>
+  useQuery({
+    queryKey: ["token-logos"],
+    queryFn: () => api<{ logos: Record<string, string> }>("/api/token-logos"),
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+
+export const usePrestocks = () =>
+  useQuery({
+    queryKey: ["prestocks"],
+    queryFn: () => api<PrestocksResponse>("/api/prestocks"),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
 export interface IndexList {

@@ -40,6 +40,27 @@ export interface IndexSummary {
   paused: boolean;
 }
 
+/** Live PreStocks reference data for one of our pre-IPO assets (read-only mainnet, D037). */
+export interface PrestocksRow {
+  symbol: string;
+  mint: string;
+  prestocksSymbol: string;
+  url: string;
+  tokenPrice: number;
+  markPrice: number | null;
+  impliedValuation: number | null;
+  markValuation: number | null;
+  supply: number | null;
+  /** tokenPrice / markPrice - 1 (null without a mark). */
+  premium: number | null;
+}
+export interface PrestocksResponse {
+  available: boolean;
+  source: string;
+  fetchedAt: string | null;
+  rows: PrestocksRow[];
+}
+
 export interface AssetPrice {
   symbol: string;
   name: string;
@@ -195,6 +216,8 @@ export interface Portfolio {
     owedCreatorShares: number;
     owedCreatorUsd: number;
     claimedShares: number;
+    /** Fees keep accruing (fee > 0 and a funded vault): claiming accrues first. */
+    accruing: boolean;
   })[];
   parentRoyalties: {
     index: string;
@@ -202,6 +225,7 @@ export interface Portfolio {
     parent: string;
     owedShares: number;
     owedUsd: number;
+    accruing: boolean;
   }[];
 }
 

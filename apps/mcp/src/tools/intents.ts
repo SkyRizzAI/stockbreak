@@ -4,16 +4,35 @@
  */
 import type { McpServer } from "@modelcontextprotocol/server";
 import { createIntent, getIntent } from "@repo/db";
+import { isAddress } from "@solana/kit";
 import * as z from "zod";
 import type { McpCtx } from "../ctx";
 import { type CreateSpec, createSchema, toCreateParams } from "../spec";
-import { BASE58, checkUsdcLimit, ok, resolveIndex, safe, usd } from "../util";
+import { checkUsdcLimit, ok, resolveIndex, safe, usd } from "../util";
 import type { IndexDetail } from "./types";
 
 const TTL_MS = 30 * 60_000;
+
+/**
+ * A parent's target weights as clone input. A pre-IPO asset that has since listed is
+ * replaced by its listed stock (weights merged), the way the vault migrated the parent.
+ */
+function parentComposition(
+  c: McpCtx,
+  assets: { symbol: string; targetWeightBps: number }[],
+): { symbol: string; weightPct: number }[] {
+  const ipos = c.deployment().ipos;
+  const out = new Map<string, number>();
+  for (const x of assets) {
+    if (x.targetWeightBps <= 0) continue;
+    const sym = ipos[x.symbol]?.newSymbol ?? x.symbol;
+    out.set(sym, (out.get(sym) ?? 0) + x.targetWeightBps / 100);
+  }
+  return [...out].map(([symbol, weightPct]) => ({ symbol, weightPct }));
+}
 const wallet = z
   .string()
-  .regex(BASE58, "Not a Solana address")
+  .refine((v) => isAddress(v), "Not a Solana address")
   .optional()
   .describe("Only this wallet may sign (optional)");
 
@@ -45,7 +64,7 @@ export function registerIntentTools(s: McpServer, ctx: () => Promise<McpCtx>): v
       description: `Prepare joining an index with USDC (zapped into its assets). Returns a link the user opens to sign. ${next}`,
       inputSchema: z.object({
         index: z.string().describe("Index address or symbol"),
-        usdc: z.number().positive().describe("USDC amount"),
+        usdc: z.number().min(1, "Joins start at $1 USDC").describe("USDC amount (at least 1)"),
         wallet,
       }),
     },
@@ -131,7 +150,7 @@ export function registerIntentTools(s: McpServer, ctx: () => Promise<McpCtx>): v
         assets: createSchema.shape.assets
           .optional()
           .describe("Override weights (ignored when follow=true)"),
-        depositUsdc: z.number().min(0).optional(),
+        depositUsdc: createSchema.shape.depositUsdc,
         wallet,
       }),
     },
@@ -144,12 +163,7 @@ export function registerIntentTools(s: McpServer, ctx: () => Promise<McpCtx>): v
         name: a.name ?? `${p.name} Remix`.slice(0, 32),
         symbol: a.symbol ?? `${p.symbol.slice(0, 9)}R`,
         description: `Clone of ${p.name}.`,
-        assets:
-          a.assets && !a.follow
-            ? a.assets
-            : p.assets
-                .filter((x) => x.targetWeightBps > 0)
-                .map((x) => ({ symbol: x.symbol, weightPct: x.targetWeightBps / 100 })),
+        assets: a.assets && !a.follow ? a.assets : parentComposition(c, p.assets),
         strategy: {
           mode: p.strategy.mode as "Manual" | "Threshold" | "Periodic",
           driftThresholdPct: p.strategy.driftThresholdBps / 100 || 5,

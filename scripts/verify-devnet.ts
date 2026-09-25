@@ -13,6 +13,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { clearFaucetClaimsSince, closeDb, getDb } from "@repo/db";
 import { rpcUrlFor } from "./lib/chain";
+import { devnetDbUrl, REMOTE_DEVNET_DB } from "./lib/devnet-db";
 import { log, run } from "./lib/proc";
 import { ROOT, toolchainEnv } from "./lib/toolchain";
 
@@ -41,6 +42,14 @@ process.on("SIGINT", () => void stop().then(() => process.exit(130)));
 
 let code = 1;
 const started = new Date();
+// Test wallets, indexes and posts must never land in the public demo database.
+if (REMOTE_DEVNET_DB && !process.argv.includes("--allow-remote-db")) {
+  log(
+    S,
+    "DEVNET_DATABASE_URL is set (public demo DB). Run with DEVNET_DATABASE_URL= bun run verify:devnet, or pass --allow-remote-db.",
+  );
+  process.exit(1);
+}
 try {
   const running = await cluster();
   if (running === "devnet" && (await json(MCP))) {
@@ -93,13 +102,10 @@ try {
 } finally {
   await stop();
   // Test wallets must not use up the SOL faucet budget left for manual testing.
-  const url = new URL(
-    process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5434/app",
-  );
-  url.pathname = "/app_devnet";
-  const n = await clearFaucetClaimsSince(getDb(url.toString()), "devnet", started).catch(() => 0);
+  const url = devnetDbUrl();
+  const n = await clearFaucetClaimsSince(getDb(url), "devnet", started).catch(() => 0);
   if (n) log(S, `released ${n} test faucet claims from today's budget`);
-  await closeDb(url.toString()).catch(() => {});
+  await closeDb(url).catch(() => {});
 }
 log(S, code === 0 ? "PASS" : "FAIL");
 process.exit(code);

@@ -51,7 +51,7 @@ export function SimulatedBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] text-muted-foreground",
+        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] whitespace-nowrap text-muted-foreground",
         className,
       )}
       title="All assets and prices are simulated (localnet/devnet)."
@@ -65,7 +65,7 @@ export function Tag({ children, className }: { children: ReactNode; className?: 
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] text-muted-foreground",
+        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] whitespace-nowrap text-muted-foreground",
         className,
       )}
     >

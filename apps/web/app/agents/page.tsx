@@ -47,21 +47,35 @@ export default function AgentsPage() {
         </p>
       </div>
       <Section title="Connect">
+        {/* The MCP server holds the agent keypair, so it runs next to the repo, never publicly. */}
+        <p className="max-w-prose text-sm text-muted-foreground">
+          The MCP server runs on your machine next to a clone of the repository (
+          <a
+            href="https://github.com/viandwi24/stocklana#try-it"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            setup
+          </a>
+          ). It then talks to this {CLUSTER} deployment; requests your agent prepares open here for
+          you to sign.
+        </p>
         <div className="grid gap-4 lg:grid-cols-2">
           <Snippet
             title="Claude Code (HTTP)"
-            code={`claude mcp add --transport http stocklana ${mcpUrl}`}
+            code={`claude mcp add --transport http stockbreak ${mcpUrl}`}
           />
           <Snippet
             title="Claude Code (stdio)"
-            code={"claude mcp add --transport stdio stocklana -- bun <repo>/apps/mcp/src/stdio.ts"}
+            code={"claude mcp add --transport stdio stockbreak -- bun <repo>/apps/mcp/src/stdio.ts"}
           />
           <Snippet
             title="Claude Desktop (claude_desktop_config.json)"
             code={JSON.stringify(
               {
                 mcpServers: {
-                  stocklana: {
+                  stockbreak: {
                     type: "stdio",
                     command: "<absolute path to bun>",
                     args: ["<repo>/apps/mcp/src/stdio.ts"],

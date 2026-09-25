@@ -5,6 +5,8 @@
     "build": "turbo run build",
     "dev": "bun scripts/dev.ts",
     "dev:devnet": "bun scripts/dev.ts --cluster devnet",
+    "start:devnet": "bun scripts/dev.ts --cluster devnet --ci",
+    "worker:devnet": "bun scripts/dev.ts --cluster devnet --no-web",
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "turbo run check-types",
@@ -12,6 +14,7 @@
     "test:ts": "turbo run test",
     "e2e": "bun scripts/e2e.ts",
     "e2e:visual": "bun scripts/e2e.ts --visual",
+    "demo:record": "bun scripts/e2e.ts --fresh --demo",
     "setup": "bun scripts/setup.ts",
     "seed": "bun scripts/seed.ts",
     "price": "bun scripts/price.ts",
@@ -21,6 +24,9 @@
     "codegen": "bun scripts/codegen.ts",
     "verify": "bun scripts/verify.ts",
     "verify:devnet": "bun scripts/verify-devnet.ts",
+    "check:public": "bun scripts/check-public.ts",
+    "db:remote": "bun scripts/db-remote.ts",
+    "vercel:env": "bun scripts/vercel-env.ts",
     "deploy:devnet": "bun scripts/deploy-devnet.ts"
   },
   "devDependencies": {

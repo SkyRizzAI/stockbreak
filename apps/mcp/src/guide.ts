@@ -1,10 +1,10 @@
 /** docs://guide — short usage guide for LLM clients. */
-export const GUIDE = `# Stocklana MCP guide
+export const GUIDE = `# Stockbreak MCP guide
 
-Stocklana is a platform for tokenized stock indexes on Solana (localnet/devnet). Every asset and price is SIMULATED; never present them as real money.
+Stockbreak is a platform for tokenized stock indexes on Solana (localnet/devnet). Every asset and price is SIMULATED; never present them as real money.
 
 ## Research
-- list_assets: available stocks, pre-IPO tokens, USDC, with prices.
+- list_assets: available stocks, pre-IPO tokens (issued by PreStocks; includes mark price, premium and implied valuation), USDC, with prices.
 - list_indexes / get_index / get_index_performance / get_leaderboard / get_portfolio.
 - Indexes can be referenced by address or symbol (e.g. "MAG4").
 

@@ -1,3 +1,4 @@
+import { ASSETS } from "@repo/config";
 /** Tool result helpers, formatting and index resolution. */
 import { parseFailure } from "@repo/sdk";
 import type { Address } from "@solana/kit";
@@ -89,6 +90,23 @@ export function mintFor(c: McpCtx, symbol: string): Address {
   const m = c.mintOf(symbol);
   if (!m) throw new Error(`Unknown asset ${symbol}. Use list_assets to see available symbols.`);
   return m;
+}
+
+/**
+ * Mint of an asset an index may hold: listed (not converted at an IPO) and not the benchmark.
+ * Write tools use this; read tools may still name delisted or benchmark assets.
+ */
+export function investableMint(c: McpCtx, symbol: string): Address {
+  const mint = mintFor(c, symbol);
+  const sym = c.symbolOf(mint) ?? symbol;
+  const ipo = c.deployment().ipos[sym];
+  if (ipo)
+    throw new Error(
+      `${sym} is no longer listed: it converted to ${ipo.newSymbol} at its IPO. Use ${ipo.newSymbol} instead.`,
+    );
+  if (ASSETS.find((a) => a.symbol === sym)?.benchmark)
+    throw new Error(`${sym} is the benchmark and cannot be held by an index.`);
+  return mint;
 }
 
 /** Percent weights → basis points that sum to exactly 10,000. */

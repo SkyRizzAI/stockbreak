@@ -42,7 +42,7 @@ async function createCtx_(): Promise<McpCtx> {
     try {
       r = await fetch(new URL(path, env.WEB_URL), { signal: AbortSignal.timeout(20_000) });
     } catch {
-      throw new Error(`The Stocklana web app is not reachable at ${env.WEB_URL}. Is it running?`);
+      throw new Error(`The Stockbreak web app is not reachable at ${env.WEB_URL}. Is it running?`);
     }
     const body = (await r.json().catch(() => null)) as { error?: string } | null;
     if (!r.ok) throw new Error(body?.error ?? `Request failed (${r.status})`);

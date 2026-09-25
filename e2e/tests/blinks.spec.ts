@@ -4,17 +4,26 @@ import { firstIndexHref } from "./helpers";
 const RPC = process.env.E2E_RPC_URL ?? "http://127.0.0.1:8899";
 
 async function simulate(txBase64: string) {
-  const r = await fetch(RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "simulateTransaction",
-      params: [txBase64, { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }],
-    }),
-  });
-  return ((await r.json()) as { result: { value: { err: unknown; logs: string[] } } }).result.value;
+  // Public devnet RPCs rate-limit: retry a response without a result a few times.
+  for (let i = 0; ; i++) {
+    const r = await fetch(RPC, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "simulateTransaction",
+        params: [txBase64, { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }],
+      }),
+    });
+    const j = (await r.json().catch(() => ({}))) as {
+      result?: { value: { err: unknown; logs: string[] } };
+      error?: { message?: string };
+    };
+    if (j.result) return j.result.value;
+    if (i >= 4) throw new Error(`simulateTransaction failed: ${j.error?.message ?? r.status}`);
+    await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
+  }
 }
 
 test("actions.json maps index pages to the join action", async ({ request }) => {

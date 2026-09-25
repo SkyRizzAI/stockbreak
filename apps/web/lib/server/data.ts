@@ -512,7 +512,11 @@ export async function creatorsBoard(): Promise<CreatorRow[]> {
       for (const h of await holdersOf(d, s.pubkey))
         if (h.wallet !== wallet && h.wallet !== s.pubkey) joiners.add(h.wallet);
     const fees = claims
-      .filter((e) => e.wallet === wallet && (e.data as { kind: string }).kind !== "Platform")
+      // The kind decodes as an enum number (0 creator, 1 platform, 2 parent) or a name.
+      .filter(
+        (e) =>
+          e.wallet === wallet && feeKindName((e.data as { kind: unknown }).kind) !== "platform",
+      )
       .reduce((acc, e) => {
         const s = list.find((x) => x.pubkey === e.index) ?? sums.find((x) => x.pubkey === e.index);
         return acc + n6((e.data as { shares: string }).shares) * (s?.sharePrice ?? 1);
@@ -606,6 +610,7 @@ export async function portfolio(wallet: string): Promise<Portfolio> {
       owedCreatorShares: owed,
       owedCreatorUsd: owed * s.sharePrice,
       claimedShares: 0,
+      accruing: !!st && st.fees.mgmtFeeBps > 0 && s.navUsd > 0,
     });
   }
   const parentRoyalties = [];
@@ -620,6 +625,7 @@ export async function portfolio(wallet: string): Promise<Portfolio> {
       parent: s.parent as string,
       owedShares: owed,
       owedUsd: owed * s.sharePrice,
+      accruing: !!st && st.fees.mgmtFeeBps > 0 && s.navUsd > 0,
     });
   }
   const totalUsd = positions.reduce((a, p) => a + p.valueUsd, 0);

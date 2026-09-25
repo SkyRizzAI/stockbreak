@@ -8,6 +8,7 @@ import {
   fetchFeeds,
   fits,
   type IndexState,
+  indexAltAddresses,
   loadAlt,
   market,
   marketPda,
@@ -79,17 +80,21 @@ export async function keeperTick(c: WorkerCtx): Promise<number> {
   for (const { address, data } of all) {
     if (!data.strategy.allowKeeper || data.paused) continue;
     if ((keeperBackoff.get(address) ?? 0) > Date.now()) continue;
-    const v = await valueIndex(c, data);
-    if (v.effectiveSupply === 0n) continue;
-    const plan = planRebalance(data, v, { keeper: true, now, spreadBps: spread });
-    if (!plan?.triggered) continue;
+    // One bad index (stale oracle, odd state) must never stop the rest of the run.
     try {
+      const v = await valueIndex(c, data);
+      if (v.effectiveSupply === 0n) continue;
+      const plan = planRebalance(data, v, { keeper: true, now, spreadBps: spread });
+      if (!plan?.triggered) continue;
       const ixs = await rebalanceIxs(c.keeper, address as Address, data, plan);
       let lookupTables: Address[] | undefined;
       if (!fits(c.keeper.address, ixs)) {
         const row = await getIndex(c.db, address);
         let alt = row?.lookupTable as Address | null | undefined;
-        if (!alt || !(await loadAlt(c, alt))) {
+        // A table made before an update / IPO / follow sync may miss the new asset accounts.
+        const need = await indexAltAddresses(address as Address, data.shareMint, data.assets);
+        const have = alt ? (await loadAlt(c, alt))?.[alt] : undefined;
+        if (!alt || !have || !need.every((a) => have.includes(a))) {
           alt = await createIndexAlt(c, c.keeper, address as Address, data.shareMint, data.assets);
           await setLookupTable(c.db, address, alt);
           c.log("keeper", `created lookup table ${alt} for ${data.symbol}`);
@@ -119,6 +124,8 @@ export async function feesTick(c: WorkerCtx): Promise<number> {
   for (const { address, data } of all) {
     if (now - data.lastFeeTs < BigInt(c.env.FEES_INTERVAL)) continue;
     if (data.rebalanceTicket.__option === "Some") continue;
+    // Empty vaults accrue nothing: don't spend a transaction on them every interval.
+    if (data.assets.every((a) => a.balance === 0n)) continue;
     try {
       await sendTx(c, c.keeper, [await accrueFeesIx(address as Address, data)]);
       n++;
@@ -159,6 +166,17 @@ export async function followTick(c: WorkerCtx): Promise<number> {
     if (!data.followsParent || data.parent.__option !== "Some") continue;
     const parent = byAddr.get(data.parent.value);
     if (!parent) continue;
+    // Mid-IPO: the parent already holds the listed stock while this follower still holds the
+    // pre-IPO token. Syncing now would add the stock at 0% and block this index's own
+    // migration (DuplicateAsset); the IPO run migrates it first.
+    const ipos = c.deployment().ipos;
+    if (
+      data.assets.some((a) => {
+        const listed = ipos[c.symbolOf(a.mint) ?? ""]?.newMint;
+        return !!listed && parent.assets.some((p) => p.mint === listed);
+      })
+    )
+      continue;
     const want = syncResult(data, parent);
     if (targetKey(want) === targetKey(data.assets)) {
       followBackoff.delete(address);

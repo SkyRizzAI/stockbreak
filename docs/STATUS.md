@@ -76,6 +76,7 @@ Legenda: `[ ]` belum · `[~]` berjalan · `[x]` selesai · `BLOCKED(eksternal): 
 - 2026-09-24: P11 berjalan — `mock_market` ter-deploy di devnet (9WK7…qX8); upload `index_vault` pertama gagal (rate limit RPC), buffer ditutup (SOL kembali), deploy dibuat resumable (buffer persisten + retry). D030–D032.
 - 2026-09-24: P11 selesai — devnet: index_vault 4XaB…c6me + mock_market 9WK7…qX8, bootstrap, seed ringan (MAG4, MEGA, ATLS); `verify:devnet` PASS 10/10. Fix: retry 429, konfirmasi tanpa websocket, margin CU, oracle-freshness sebelum zap. Saldo admin devnet ±1,25 SOL (lihat P11 & DEMO).
 - 2026-09-24: P12 selesai — `bun run verify` ALL GREEN pada localnet bersih: lint, typecheck, 38 test program, test TS (SDK 56, MCP 10), build, e2e 63 test (termasuk DoD §11.1 no. 2–11 dalam satu run). `verify:devnet` PASS 10/10. A15 putaran 2 tanpa temuan baru. Fix terakhir: swap zap mengulang dengan harga segar bila oracle sesaat stale (`retryOnStale`), konfirmasi transaksi tanpa websocket.
+- 2026-09-25: Integrasi PreStocks (D037) — worker: API PreStocks sumber utama harga pre-IPO (fallback Jupiter → random walk); `/api/prestocks` (cache 60 detik); tag PreStocks + panel mark/premium/implied valuation + catatan migrasi IPO ala SpaceX di web; `list_assets` MCP diperkaya; DEMO diperbarui. Gate: lint, typecheck, test:ts hijau.
 
 ## Ringkasan akhir (2026-09-24)
 **Yang jadi**: dua program Anchor (`index_vault`, `mock_market`) + 38 test LiteSVM; SDK kit/Codama (zap, rebalance sandwich, ALT, IPO, humanisasi error, paritas math); worker (harga live Jupiter/Finnhub → oracle, indexer, snapshot, keeper, fee, follow, gamifikasi); web Next.js (explore, index, create/clone/follow wizard, manage, portfolio, leaderboard, profil, faucet, agents, sign, Blink, OG); MCP server (18 tool, stdio + HTTP); e2e Playwright (DoD §11.1 otomatis); deploy devnet.
@@ -120,3 +121,55 @@ Legenda: `[ ]` belum · `[~]` berjalan · `[x]` selesai · `BLOCKED(eksternal): 
   - Following kosong tanpa jalan ke All.
 
   `bun run verify` ALL GREEN: 38 test program, SDK 59, MCP 10, worker 7, **89 e2e**.
+- 2026-09-25: deploy publik devnet disiapkan (D038, `docs/DEPLOY.md`): Opsi A Vercel + Neon + worker lokal, Opsi B Cloudflare quick tunnel. Kode: file tracing Next (deployments json ikut ke fungsi), `connectionOptions` postgres.js (Neon: TLS, buang `channel_binding`, pooler tanpa prepared statement, pool kecil di Vercel), `ADMIN_KEYPAIR_JSON` opsional + faucet SOL mati dengan pesan jelas, script `db:remote`, `vercel:env`, `check:public`, `worker:devnet`, `start:devnet`. Gate:
+  - typecheck hijau; lint hijau;
+  - test db 4/4 (baru), config 3, worker 7;
+  - build web dengan env ala Vercel (tanpa `.env`, standalone) → `check:public` PASS 10/10 pada server standalone;
+  - `db:remote copy` diuji ke DB lokal kosong (13 index, 1495 harga tersalin, `--force` idempoten);
+  - `worker:devnet` dengan DB non-docker: indexer + MCP hidup;
+  - `verify:devnet` PASS 10/10 (4,6 menit).
+
+  MCP test 7/10 bila hanya chain lokal (`--chain-only`) tanpa worker: `AccountNotInitialized` pada agent_create_index. Butuh stack penuh `bun run verify`; tidak disentuh fase ini.
+- 2026-09-25: persiapan submission (A17).
+  - Riset hackathon, kompetitor, dan pasar di `docs/analysis/A17-riset-hackathon.md`.
+  - Integrasi PreStocks (D037): harga dari API PreStocks, tag/panel UI, MCP.
+  - Persiapan live demo publik (D038, `docs/DEPLOY.md`): Vercel + Neon + worker lokal, atau Cloudflare tunnel; `check:public`.
+  - README versi juri + screenshot `docs/media/`.
+  - Paket submission & naskah video di `docs/SUBMISSION.md`.
+  - Halaman Agents menjelaskan MCP berjalan lokal.
+  - `bun run verify` ALL GREEN (89 e2e, MCP 10, SDK 59, worker 7, db 4, config 3, program 38).
+- 2026-09-25: QA putaran 2 (A18, D039).
+  - Dua audit menghasilkan 39 temuan. Run e2e penuh menemukan 2 cacat lagi:
+    - `chainClock` jatuh ke jam komputer di browser;
+    - join/redeem langsung gagal tepat setelah warp.
+  - Yang terpenting sudah diperbaiki:
+    - harga live dibatasi 5%/tick;
+    - IPO kontinu, bisa diulang, dan aman terhadap race follow;
+    - tombol **Rebalance now** di Manage;
+    - fase-out ke 0% tanpa debu;
+    - validasi MCP (aset yang sudah IPO, benchmark, minimum, alamat, propose update);
+    - klaim fee saat terakru;
+    - leaderboard fee;
+    - DB devnet bersama + `verify:devnet` menolak DB publik;
+    - TLS/pooler Postgres, `metadataBase` Vercel, faucet tanpa kunci admin;
+    - mobile Allocation, "-0%", screenshot tema terang.
+  - Tes baru `scenarios-chain.spec.ts` (4).
+  - `bun run verify` ALL GREEN: program 38, SDK 59, MCP 10, worker 7, db 5, config 3, **93 e2e**.
+- 2026-09-25: susulan A18:
+  - `simulate_rebalance` memakai aturan keeper; `agent_rebalance` hanya untuk index milik atau yang dikelola agent;
+  - panel PreStocks: penanda basi + Retry;
+  - `list_assets` timeout 1,5 s;
+  - `ADMIN_KEYPAIR_JSON` divalidasi lazy;
+  - peringatan Follow + Hold di wizard;
+  - `.env.example` lengkap;
+  - retry RPC untuk error jaringan sesaat;
+  - wizard "Finish deposit with swapped assets".
+
+  `verify:devnet` PASS 10/10. `bun run verify` ALL GREEN (93 e2e).
+- 2026-09-25: `bun run demo:record` (klip video pitch otomatis, `e2e/tests/demo.spec.ts`, 8 adegan).
+  - Merekam demo menemukan dua cacat, keduanya sudah diperbaiki:
+    - setoran pertama gagal (`InitialWeightMismatch`) bila harga bergerak antara swap dan join → `fitInitialAmounts` di zapIn, `joinWithHeld`, dan server;
+    - `joinWithHeld` menolak index kosong.
+  - `bun run verify` ALL GREEN (93 e2e); demo 8/8.
+- 2026-09-25: rename produk → **Stockbreak** (D040). UI via `APP_NAME`, MCP `stockbreak`, dokumen submission; identifier internal & URL repo/hackathon tetap.
+- 2026-09-25: logo token resmi (D041): `/api/token-logos` (Jupiter, cache 24 jam, fallback glyph), `TickerMono` sadar-logo, `AssetStack` di tabel index, logo di ticker Home, chip kartu, dan panel PreStocks.

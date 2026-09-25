@@ -6,6 +6,7 @@
  * - Otherwise (or --fresh on free ports): start `bun scripts/dev.ts --ci`
  *   (fresh chain, production web build), seed demo data, test, then stop it.
  * bun run e2e:visual  → only the visual review screenshots (e2e/visual/).
+ * bun run demo:record  → demo clips for the pitch video (e2e/demo/*.webm).
  */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -19,7 +20,8 @@ const RPC = process.env.RPC_URL || "http://127.0.0.1:8899";
 const args = process.argv.slice(2).filter((a) => a !== "--");
 const fresh = args.includes("--fresh");
 const visual = args.includes("--visual");
-const pwArgs = args.filter((a) => a !== "--fresh" && a !== "--visual");
+const demo = args.includes("--demo");
+const pwArgs = args.filter((a) => a !== "--fresh" && a !== "--visual" && a !== "--demo");
 
 async function up(url: string, init?: RequestInit): Promise<boolean> {
   try {
@@ -84,15 +86,15 @@ try {
     log(S, "stack ready; seeding demo data");
     await run(["bun", "scripts/seed.ts"]);
   }
-  if (!visual) {
+  if (!visual && !demo) {
     log(S, "MCP integration tests");
     const m = await run(["bun", "test"], { cwd: path.join(ROOT, "apps/mcp"), allowFail: true });
     if (m.code !== 0) throw new Error("MCP tests failed");
   }
-  const target = visual ? ["tests/visual.spec.ts"] : [];
+  const target = visual ? ["tests/visual.spec.ts"] : demo ? ["tests/demo.spec.ts"] : [];
   const r = await run(["bunx", "playwright", "test", ...target, ...pwArgs], {
     cwd: path.join(ROOT, "e2e"),
-    env: visual ? { E2E_VISUAL: "1" } : {},
+    env: visual ? { E2E_VISUAL: "1" } : demo ? { E2E_DEMO: "1" } : {},
     allowFail: true,
   });
   code = r.code;

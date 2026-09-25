@@ -7,6 +7,7 @@ import { UserLink } from "@/components/data/addr";
 import { AllocationBar, AllocationLegend } from "@/components/data/allocation";
 import { IndexGlyph, TickerMono } from "@/components/data/glyph";
 import { Delta, Price, Usd } from "@/components/data/num";
+import { PrestocksPanel, PrestocksTag } from "@/components/data/prestocks";
 import {
   ErrorState,
   KV,
@@ -135,10 +136,15 @@ function Allocation({ d }: { d: IndexDetail }) {
               <TableRow key={a.mint}>
                 <TableCell>
                   <span className="flex items-center gap-2">
-                    <TickerMono symbol={a.symbol} />
-                    <span className="flex flex-col leading-tight">
-                      <span className="mono text-sm">{a.symbol}</span>
-                      <span className="text-xs text-muted-foreground">
+                    <TickerMono symbol={a.symbol} className="hidden sm:flex" />
+                    <span className="flex min-w-0 flex-col leading-tight">
+                      <span className="flex items-center gap-1.5">
+                        <span className="mono text-sm">{a.symbol}</span>
+                        {a.kind === "PreIpo" ? (
+                          <PrestocksTag className="hidden sm:inline-flex" />
+                        ) : null}
+                      </span>
+                      <span className="max-w-32 truncate text-xs text-muted-foreground sm:max-w-none">
                         {a.name}
                         {a.kind === "PreIpo" ? " · pre-IPO" : ""}
                         {a.multiplier !== 1 ? ` · ×${a.multiplier}` : ""}
@@ -159,7 +165,7 @@ function Allocation({ d }: { d: IndexDetail }) {
                 <TableCell
                   className={`num text-right ${hot ? "text-warn" : "text-muted-foreground"}`}
                 >
-                  {drift > 0 ? "+" : ""}
+                  {bps(drift) !== "0%" && drift > 0 ? "+" : ""}
                   {bps(drift)}
                 </TableCell>
               </TableRow>
@@ -403,6 +409,8 @@ export function IndexView({ pubkey }: { pubkey: string }) {
 
         <Allocation d={d} />
 
+        <PrestocksPanel symbols={d.live.filter((a) => a.kind === "PreIpo").map((a) => a.symbol)} />
+
         {d.thesis ? (
           <Section title="Thesis">
             <p className="max-w-prose text-sm leading-relaxed">{d.thesis}</p>
@@ -485,7 +493,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
               <p className="text-sm text-muted-foreground">
                 {d.strategy.allowKeeper
                   ? "No managers. Only the creator and the keeper can rebalance."
-                  : "No managers. Only the creator can rebalance."}
+                  : "No managers. Only the creator can rebalance (Manage → Rebalance now)."}
               </p>
             )}
           </Section>

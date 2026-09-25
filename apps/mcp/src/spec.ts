@@ -1,7 +1,7 @@
 /** Shared input schema + conversion for index creation (intents and agent wallet). */
 import * as z from "zod";
 import type { McpCtx } from "./ctx";
-import { mintFor, toBps } from "./util";
+import { investableMint, toBps } from "./util";
 
 export const assetsSchema = z
   .array(
@@ -59,8 +59,11 @@ export const createSchema = z.object({
   depositUsdc: z
     .number()
     .min(0)
+    .refine((v) => v === 0 || v >= 1.1, {
+      message: "The first deposit must be 0 (deposit later) or at least $1.10",
+    })
     .optional()
-    .describe("Optional first deposit in USDC (zapped into the assets)"),
+    .describe("Optional first deposit in USDC (zapped into the assets); 0 or at least 1.10"),
 });
 
 export type CreateSpec = z.infer<typeof createSchema>;
@@ -76,7 +79,7 @@ export function toCreateParams(
   const weights = toBps(s.assets);
   const seen = new Set<string>();
   const assets = s.assets.map((a, i) => {
-    const mint = mintFor(c, a.symbol);
+    const mint = investableMint(c, a.symbol);
     if (seen.has(mint)) throw new Error(`${a.symbol} is listed twice.`);
     seen.add(mint);
     return { mint, symbol: c.symbolOf(mint) ?? a.symbol, weightBps: weights[i] as number };

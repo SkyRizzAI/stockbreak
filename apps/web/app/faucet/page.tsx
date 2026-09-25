@@ -66,22 +66,37 @@ export default function FaucetPage() {
                   : "Airdrops 2 SOL on the local validator."}
               </p>
             </div>
-            <Button
-              variant="outline"
-              className="self-start"
-              disabled={busy}
-              onClick={() =>
-                void run("Get SOL", async () =>
-                  api<{ signature?: string }>("/api/faucet/sol", {
-                    method: "POST",
-                    body: JSON.stringify({ wallet: w.address }),
-                  }),
-                )
-              }
-              data-testid="faucet-sol"
-            >
-              Get SOL
-            </Button>
+            {cfg.data?.faucetSol === false ? (
+              <p className="text-sm">
+                The in-app SOL faucet is off on this deployment. Get free devnet SOL at{" "}
+                <a
+                  href="https://faucet.solana.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  faucet.solana.com
+                </a>{" "}
+                for <span className="mono break-all">{w.address}</span>.
+              </p>
+            ) : (
+              <Button
+                variant="outline"
+                className="self-start"
+                disabled={busy}
+                onClick={() =>
+                  void run("Get SOL", async () =>
+                    api<{ signature?: string }>("/api/faucet/sol", {
+                      method: "POST",
+                      body: JSON.stringify({ wallet: w.address }),
+                    }),
+                  )
+                }
+                data-testid="faucet-sol"
+              >
+                Get SOL
+              </Button>
+            )}
           </section>
           <section className="flex flex-col gap-3 rounded-2xl border p-4">
             <div className="flex flex-col gap-1">

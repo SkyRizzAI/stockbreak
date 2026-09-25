@@ -15,6 +15,7 @@ import {
   fetchIndex,
   fetchMints,
   fetchTokenBalances,
+  fitInitialAmounts,
   fits,
   indexAltAddresses,
   indexPda,
@@ -29,6 +30,7 @@ import {
   shareMintPda,
   swapIx,
   TOKEN_PROGRAM,
+  valueIndex,
   vault,
   waitAltActive,
 } from "@repo/sdk";
@@ -157,8 +159,15 @@ export async function joinStep(
     const d = (now.get(holdings[i] as Address) ?? 0n) - (baseline[i] ?? 0n);
     return d > 0n ? d : 0n;
   });
+  if (state.initial) {
+    // First deposit: trim to the target weights at current prices (swaps landed earlier).
+    const fitted = fitInitialAmounts(await valueIndex(c, st), maxAmounts);
+    for (const [i, v] of fitted.entries()) maxAmounts[i] = v;
+  }
   const expected = BigInt((state.expectedShares as string | undefined) ?? "0");
-  const minShares = (expected * 98n) / 100n;
+  // A first deposit mints exactly its (trimmed) value into an empty vault: no price risk to
+  // guard against, and the pre-trim estimate would reject a valid join.
+  const minShares = state.initial ? 1n : (expected * 98n) / 100n;
   const ixs = await joinIxs(
     user,
     index,

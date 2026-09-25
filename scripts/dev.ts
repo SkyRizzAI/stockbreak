@@ -4,7 +4,9 @@
  *   bun run dev                 localnet: Postgres + Surfpool (offline) + deploy + bootstrap + worker + web + MCP
  *   bun run dev -- --ci         same, non-interactive (used by verify); web runs `next start` after a build
  *   bun run dev:devnet          worker + web + MCP on this machine pointed at devnet (no validator)
+ *   bun run worker:devnet       worker + MCP only, devnet, DB = DEVNET_DATABASE_URL (hosted demo, docs/DEPLOY.md)
  *   flags: --no-web --no-worker --no-mcp --chain-only
+ *   env:   DEVNET_DATABASE_URL (devnet only) = hosted Postgres instead of local docker app_devnet
  */
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -12,6 +14,7 @@ import { writeShocks } from "@repo/config/node";
 import type { Subprocess } from "bun";
 import { chainCtx, clusterFromArgs, ensureSol, rpcUrlFor, waitForRpc } from "./lib/chain";
 import { resetChainTables } from "./lib/db-reset";
+import { devnetDbUrl, REMOTE_DEVNET_DB } from "./lib/devnet-db";
 import { log, run } from "./lib/proc";
 import { ANCHOR_DIR, ROOT, toolchainEnv } from "./lib/toolchain";
 
@@ -133,11 +136,8 @@ async function deployPrograms(rpcUrl: string): Promise<void> {
   }
 }
 
-function devnetDbUrl(): string {
-  const u = new URL(process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5434/app");
-  u.pathname = "/app_devnet";
-  return u.toString();
-}
+/** Hosted Postgres for the public devnet demo (docs/DEPLOY.md): skips local docker. */
+const REMOTE_DB = cluster === "devnet" ? REMOTE_DEVNET_DB : "";
 
 function appEnv(): Record<string, string> {
   if (cluster === "localnet") return {};
@@ -157,17 +157,25 @@ function appEnv(): Record<string, string> {
     KEEPER_INTERVAL: "60",
     FOLLOW_INTERVAL: "60",
     DATABASE_URL: devnetDbUrl(),
+    // Public URL for Blinks/OG/MCP sign links (Vercel domain or tunnel), docs/DEPLOY.md.
+    ...(process.env.DEVNET_WEB_URL ? { WEB_URL: process.env.DEVNET_WEB_URL } : {}),
   };
 }
 
 async function main(): Promise<void> {
-  await run(["docker", "compose", "up", "-d", "--wait"], { capture: true });
-  log(S, "postgres ready (5434)");
-  // Apply pending migrations (idempotent) so new tables exist without re-running setup.
-  await run(["bun", "run", "--cwd", "packages/db", "db:migrate"], {
-    capture: true,
-    env: cluster === "devnet" ? { DATABASE_URL: devnetDbUrl() } : {},
-  });
+  if (REMOTE_DB) {
+    // drizzle migrator via @repo/db (TLS/pooler handling), never prints the URL.
+    await run(["bun", "scripts/db-remote.ts", "migrate"], { capture: true });
+    log(S, "hosted postgres ready (DEVNET_DATABASE_URL)");
+  } else {
+    await run(["docker", "compose", "up", "-d", "--wait"], { capture: true });
+    log(S, "postgres ready (5434)");
+    // Apply pending migrations (idempotent) so new tables exist without re-running setup.
+    await run(["bun", "run", "--cwd", "packages/db", "db:migrate"], {
+      capture: true,
+      env: cluster === "devnet" ? { DATABASE_URL: devnetDbUrl() } : {},
+    });
+  }
 
   if (cluster === "localnet") {
     const { rpcUrl } = rpcUrlFor("localnet");
@@ -241,7 +249,8 @@ async function main(): Promise<void> {
     } else {
       start("web", ["bun", "run", "dev"], { cwd: webDir, env });
     }
-    await waitHttp(process.env.WEB_URL || "http://localhost:3000", "web");
+    // Local port, not WEB_URL: WEB_URL may be a public tunnel URL (docs/DEPLOY.md).
+    await waitHttp("http://localhost:3000", "web");
   }
   log(S, `READY (${cluster}). Ctrl+C to stop.`);
 }
