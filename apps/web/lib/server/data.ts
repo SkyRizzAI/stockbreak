@@ -570,6 +570,9 @@ async function positionRows(wallet: string, sums: IndexSummary[]): Promise<Posit
   return pos.flatMap((p) => {
     const s = sums.find((x) => x.pubkey === p.index);
     if (!s) return [];
+    // An emptied vault holds no shares: a row here is the indexer catching up with a
+    // full redeem, not a -100% position (it would read as a total loss for a few seconds).
+    if (s.navUsd <= 0 && s.sharePrice <= 0) return [];
     const shares = n6(p.shares);
     const value = shares * s.sharePrice;
     const cost = n6(p.costBasisMicroUsd);

@@ -191,9 +191,14 @@ test("hosted agent: fund, create, join, update, fees, redeem through the remote 
     expect(again.text).toMatch(/no pending update/i);
 
     // Management fees accrue over time; the agent (creator) claims them.
-    script("warp", "--days", "30");
-    const claim = must(await tool(key, "agent_claim_fees", { index }), "agent_claim_fees");
-    expect(claim.text).toMatch(/claim/i);
+    // Localnet can time-travel 30 days; on devnet only seconds of fees have accrued.
+    const cluster = ((await (await request.get("/api/config")).json()) as { cluster: string })
+      .cluster;
+    if (cluster === "localnet") script("warp", "--days", "30");
+    const claim = await tool(key, "agent_claim_fees", { index });
+    if (cluster === "localnet") must(claim, "agent_claim_fees");
+    expect(claim.text).toMatch(/claim|fee/i);
+    expect(claim.text).not.toMatch(/undefined|TypeError/);
 
     // Redeem half, then the rest.
     must(await tool(key, "agent_redeem", { index, pct: 50 }), "agent_redeem 50%");
@@ -202,11 +207,15 @@ test("hosted agent: fund, create, join, update, fees, redeem through the remote 
     expect(none.ok).toBe(false);
 
     // The agent's portfolio no longer holds the index.
-    const pf = await request.get(`/api/portfolio/${agent}`);
-    expect(pf.ok()).toBe(true);
-    const held = ((await pf.json()) as { positions: { pubkey?: string; index?: string }[] })
-      .positions;
-    expect(JSON.stringify(held)).not.toContain(index);
+    await expect
+      .poll(
+        async () => {
+          const pf = await request.get(`/api/portfolio/${agent}`);
+          return JSON.stringify(((await pf.json()) as { positions: unknown[] }).positions);
+        },
+        { timeout: 60_000 },
+      )
+      .not.toContain(index);
 
     shared = { key, agent, index };
 
@@ -328,4 +337,81 @@ test("AI page: new user signs in, creates an agent, funds it, sees the next step
   await expect(page.getByText(/Keep at least one index/)).toBeVisible();
   await expect(chip).toHaveAttribute("aria-pressed", "true");
   await expect(row2.getByTestId("autopilot-toggle")).toBeEnabled();
+});
+
+// Costs LLM tokens and takes minutes: opt in with E2E_AUTOPILOT_LLM=1 (used for the devnet pass).
+test("autopilot with a real LLM reviews an index it manages and logs what it did", async ({
+  playwright,
+}) => {
+  test.skip(!process.env.E2E_AUTOPILOT_LLM, "set E2E_AUTOPILOT_LLM=1 to run");
+  const request = await playwright.request.newContext({ baseURL: BASE });
+  try {
+    await signIn(request);
+    const c = await request.post("/api/me/agents", { data: { name: `Pilot LLM ${T}` } });
+    const agent = ((await c.json()) as { wallet: string }).wallet;
+    const url = `/api/me/agents/${agent}/autopilot`;
+    const g = (await (await request.get(url)).json()) as { available: boolean; reason: string };
+    test.skip(!g.available, `autopilot unavailable: ${g.reason}`);
+    expect((await request.post(`/api/me/agents/${agent}/fund`, { data: {} })).ok()).toBe(true);
+    const usdc = await request.post(`/api/me/agents/${agent}/fund`, {
+      data: { asset: "USDC", amount: 300 },
+    });
+    expect(usdc.ok(), await usdc.text()).toBe(true);
+    const key = (
+      (await (
+        await request.post(`/api/me/agents/${agent}/keys`, { data: { name: "llm" } })
+      ).json()) as { key: string }
+    ).key;
+    const [a, b] = await stockSymbols(key);
+    const create = must(
+      await tool(key, "agent_create_index", {
+        name: `Pilot ${T}`,
+        symbol: `PL${T}`,
+        assets: [
+          { symbol: a, weightPct: 50 },
+          { symbol: b, weightPct: 50 },
+        ],
+        depositUsdc: 100,
+      }),
+      "create",
+    );
+    const index = create.data.address as string;
+    const saved = await request.put(url, {
+      data: {
+        enabled: true,
+        intervalMinutes: 1440,
+        indexes: [index],
+        strategy:
+          "Check drift. Rebalance only if drift is above the trigger. Then publish one short, factual agent_post on the index describing its current weights. Never change fees.",
+      },
+    });
+    expect(saved.ok(), await saved.text()).toBe(true);
+    const run = await request.post(`${url}/run`);
+    expect(run.ok(), await run.text()).toBe(true);
+
+    let last:
+      | { status: string; summary: string; actions: { tool: string; ok: boolean }[] }
+      | undefined;
+    await expect
+      .poll(
+        async () => {
+          const s = (await (await request.get(url)).json()) as { runs: NonNullable<typeof last>[] };
+          last = s.runs[0];
+          return last && last.status !== "running" ? last.status : "pending";
+        },
+        { timeout: 420_000, intervals: [10_000] },
+      )
+      .not.toBe("pending");
+    console.log(`autopilot run: ${last?.status} · ${last?.summary}`);
+    console.log(
+      `actions: ${last?.actions.map((x) => `${x.tool}${x.ok ? "" : "(failed)"}`).join(", ")}`,
+    );
+    expect(["ok", "noop"], `run ended: ${last?.status} ${last?.summary}`).toContain(last?.status);
+    expect(last?.summary ?? "").not.toMatch(/sbk_|sk-or-|api[_-]?key=/i);
+    // Turning it off stops scheduled runs.
+    const off = await request.put(url, { data: { enabled: false } });
+    expect(((await off.json()) as { enabled: boolean }).enabled).toBe(false);
+  } finally {
+    await request.dispose();
+  }
 });

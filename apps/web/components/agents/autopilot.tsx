@@ -146,7 +146,7 @@ export function AutopilotPanel({
                 ? `Runs every ${every(a.intervalMinutes)}${a.nextRunAt ? ` · next ${ago(a.nextRunAt).replace(" ago", "")}` : ""}`
                 : indexes.length
                   ? "Off. Turn it on and the platform runs this agent on a schedule."
-                  : "Needs an index to manage first (see below)."}
+                  : "Needs an index to manage first."}
           </span>
         </span>
         <div className="flex items-center gap-2">
@@ -180,7 +180,7 @@ export function AutopilotPanel({
             disabled={busy}
           >
             <SelectTrigger className="h-9 w-full" aria-label="Check every">
-              <SelectValue />
+              <SelectValue>{(v: string) => every(Number(v))}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {INTERVALS.map((m) => (

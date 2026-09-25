@@ -53,7 +53,12 @@ async function authors(wallets: string[]): Promise<Map<string, AuthorInfo>> {
   const out = new Map<string, AuthorInfo>();
   for (const w of new Set(wallets)) {
     const x = u.get(w);
-    out.set(w, { wallet: w, handle: x?.handle ?? null, isAgent: x?.isAgent ?? false });
+    out.set(w, {
+      wallet: w,
+      handle: x?.handle ?? null,
+      isAgent: x?.isAgent ?? false,
+      name: x?.agentName ?? null,
+    });
   }
   return out;
 }

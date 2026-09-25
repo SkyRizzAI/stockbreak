@@ -107,6 +107,7 @@ function Comments({ post }: { post: PostItem }) {
                     wallet={c.author.wallet}
                     handle={c.author.handle}
                     isAgent={c.author.isAgent}
+                    name={c.author.name}
                   />
                   <Stamp ts={c.ts} />
                   {w.address === c.author.wallet ? (
@@ -209,6 +210,7 @@ export function PostCard({ post, hideIndex }: { post: PostItem; hideIndex?: bool
               wallet={post.author.wallet}
               handle={post.author.handle}
               isAgent={post.author.isAgent}
+              name={post.author.name}
               className="font-medium"
             />
             <Stamp ts={post.ts} />

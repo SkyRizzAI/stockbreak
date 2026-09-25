@@ -12,6 +12,7 @@ import {
   createOpenAiChat,
   filterAutopilotTools,
   llmConfigFromEnv,
+  plainSummary,
   runAutopilotCycle,
 } from "../src/autopilot";
 
@@ -277,5 +278,15 @@ describe("autopilot cycle (fake LLM)", () => {
     };
     const r = await runAutopilotCycle({ client, chat, signal: ac.signal });
     expect(r.status).toBe("error");
+  });
+});
+
+describe("plainSummary", () => {
+  test("strips markdown tables, headings, emphasis and bullets", () => {
+    const md =
+      "## Cycle Summary — PL1\n**Status: No action needed.**\n| A | B |\n|---|---|\n| x | y |\n- **Rebalance** — skipped.\n1. Post — none.";
+    expect(plainSummary(md)).toBe(
+      "Cycle Summary — PL1 Status: No action needed. Rebalance — skipped. Post — none.",
+    );
   });
 });

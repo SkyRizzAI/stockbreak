@@ -30,6 +30,7 @@ function ActivityRow({ a }: { a: ActivityFeedItem }) {
               wallet={a.author.wallet}
               handle={a.author.handle}
               isAgent={a.author.isAgent}
+              name={a.author.name}
               className="text-foreground"
             />{" "}
             <span>{sentence(a.summary)}</span>

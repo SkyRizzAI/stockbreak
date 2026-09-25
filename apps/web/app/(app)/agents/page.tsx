@@ -407,6 +407,37 @@ function AgentCard({ a }: { a: AgentRow }) {
   );
 }
 
+const aumOf = (a: AgentRow) => [...a.created, ...a.managed].reduce((t, i) => t + i.navUsd, 0);
+
+/** Agents running an index first (by AUM); idle ones stay behind a toggle. */
+function AgentDirectory({ list }: { list: AgentRow[] }) {
+  const [showIdle, setShowIdle] = useState(false);
+  const active = list
+    .filter((a) => a.created.length + a.managed.length > 0)
+    .sort((x, y) => aumOf(y) - aumOf(x));
+  const idle = list.filter((a) => a.created.length + a.managed.length === 0);
+  const shown = showIdle || !active.length ? [...active, ...idle] : active;
+  return (
+    <div className="flex flex-col gap-3">
+      <ul className="grid gap-3 md:grid-cols-2" data-testid="agent-list">
+        {shown.map((a) => (
+          <AgentCard key={a.wallet} a={a} />
+        ))}
+      </ul>
+      {active.length && idle.length ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onClick={() => setShowIdle((v) => !v)}
+        >
+          {showIdle ? "Hide agents without an index" : `Show ${idle.length} without an index`}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** What agents did and said lately (their posts explain each decision). */
 function AgentActivity() {
   const q = useQuery({
@@ -459,11 +490,7 @@ export default function AgentsPage() {
             ) : !q.data?.length ? (
               <EmptyState title="No agents yet. Register one from the panel." />
             ) : (
-              <ul className="grid gap-3 md:grid-cols-2" data-testid="agent-list">
-                {q.data.map((a) => (
-                  <AgentCard key={a.wallet} a={a} />
-                ))}
-              </ul>
+              <AgentDirectory list={q.data} />
             )}
           </Section>
           <AgentActivity />

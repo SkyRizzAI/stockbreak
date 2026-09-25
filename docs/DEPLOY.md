@@ -183,11 +183,11 @@ DB: Neon Postgres lewat **Hyperdrive** (binding `HYPERDRIVE`, ID di kedua `wrang
 | Root directory | `apps/web` | `apps/worker` |
 | Build command | `cd ../.. && bun install --frozen-lockfile && bun run db:remote -- migrate && cd apps/web && bun run cf:build` | `cd ../.. && bun install --frozen-lockfile` |
 | Deploy command | `bun run cf:deploy` | `bun run cf:deploy` |
-| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1`, `CLUSTER=devnet`, `NEXT_PUBLIC_CLUSTER=devnet`, `NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com`, `NEXT_PUBLIC_WS_URL=wss://api.devnet.solana.com`, `NEXT_PUBLIC_APP_NAME=Stockbreak`, `NEXT_PUBLIC_MCP_URL=https://stockbreak.fun/api/mcp`, `WEB_URL=https://stockbreak.fun` | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` |
+| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1`, `CLUSTER=devnet`, `NEXT_PUBLIC_CLUSTER=devnet`, `NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com`, `NEXT_PUBLIC_WS_URL=wss://api.devnet.solana.com`, `NEXT_PUBLIC_APP_NAME=Stockbreak`, `NEXT_PUBLIC_MCP_URL=https://stockbreak.fun/api/mcp`, `WEB_URL=https://stockbreak.fun`, `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://localhost:5432/unused` | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` |
 | Build secret | `DEVNET_DATABASE_URL` (Neon direct, untuk migrasi) | — |
 | Build watch paths | `apps/web/*`, `apps/mcp/*`, `packages/*`, `bun.lock` | `apps/worker/*`, `apps/mcp/*`, `packages/*`, `bun.lock` |
 
-`NEXT_PUBLIC_*` dan `WEB_URL` di-bake saat `next build`, jadi harus menjadi build variable (nilai di `vars` wrangler hanya untuk runtime). Migrasi (`db:remote -- migrate`) idempoten; bila gagal, build gagal dan versi lama tetap live.
+`NEXT_PUBLIC_*` dan `WEB_URL` di-bake saat `next build`, jadi harus menjadi build variable (nilai di `vars` wrangler hanya untuk runtime). Migrasi (`db:remote -- migrate`) idempoten; bila gagal, build gagal dan versi lama tetap live. `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` hanya placeholder: `opennextjs-cloudflare deploy` membuat emulasi lokal binding Hyperdrive dan menolak jalan tanpa nilai ini (tidak pernah dipakai untuk koneksi).
 
 ### C3. Secret runtime (Worker → Settings → Variables and Secrets, tipe Secret)
 | Worker | Secret |

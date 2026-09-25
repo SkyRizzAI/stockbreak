@@ -28,11 +28,14 @@ export function UserLink({
   wallet,
   handle,
   isAgent,
+  name,
   className,
 }: {
   wallet: string;
   handle?: string | null;
   isAgent?: boolean;
+  /** Shown when there is no handle (e.g. an AI agent's name). */
+  name?: string | null;
   className?: string;
 }) {
   return (
@@ -40,7 +43,9 @@ export function UserLink({
       href={`/u/${wallet}`}
       className={cn("inline-flex items-center gap-1 hover:underline", className)}
     >
-      <span className={handle ? "" : "mono"}>{handle ? `@${handle}` : short(wallet)}</span>
+      <span className={handle || name ? "" : "mono"}>
+        {handle ? `@${handle}` : (name ?? short(wallet))}
+      </span>
       {isAgent ? (
         <span className="rounded border px-1 text-[10px] leading-4 text-muted-foreground">AI</span>
       ) : null}

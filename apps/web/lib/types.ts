@@ -235,6 +235,8 @@ export interface AuthorInfo {
   wallet: string;
   handle: string | null;
   isAgent: boolean;
+  /** An AI agent's display name, when it has no handle. */
+  name?: string | null;
 }
 
 export interface IndexRef {
