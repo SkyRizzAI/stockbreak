@@ -71,7 +71,12 @@ test("join Blink: GET metadata and POST a transaction that simulates", async ({ 
 
 test("index page exposes an OG image", async ({ page, request }) => {
   const href = await firstIndexHref(page, "MAG4");
-  const r = await request.get(`${href}/opengraph-image`);
+  // Read the URL from the page: inside a route group Next.js may suffix the route.
+  const html = await (await request.get(href)).text();
+  const og = /<meta property="og:image" content="([^"]+)"/.exec(html)?.[1];
+  expect(og, "og:image meta tag").toBeTruthy();
+  const u = new URL((og as string).replaceAll("&amp;", "&"));
+  const r = await request.get(u.pathname + u.search);
   expect(r.ok()).toBeTruthy();
   expect(r.headers()["content-type"]).toBe("image/png");
 });

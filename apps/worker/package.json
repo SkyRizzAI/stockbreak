@@ -3,15 +3,18 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "wrangler": "4.140.0"
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "bun test --pass-with-no-tests"
+    "test": "bun test --pass-with-no-tests",
+    "cf:deploy": "wrangler deploy"
   },
   "dependencies": {
     "@repo/config": "workspace:*",
     "@repo/db": "workspace:*",
+    "@repo/mcp": "workspace:*",
     "@repo/sdk": "workspace:*",
     "@solana/kit": "8.3.0"
   }

@@ -1,0 +1,33 @@
+// Cloudflare Worker for the web app (OpenNext), deployed by Workers Builds on push to main
+// (docs/DEPLOY.md "Opsi C", D050). No secrets here: RPC_URL, WS_URL, AGENT_KEY_SECRET, ...
+// are Worker secrets in the dashboard; the database is the Hyperdrive binding.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stockbreak",
+  "account_id": "89586fb20d63c1c6814d7ee5aa82a3d0",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  // Lets /api/mcp call this Worker's own API (a Worker can't fetch its own public URL).
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "stockbreak" }],
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "cf90210018f14c218bba4408d2445c55" }],
+  "routes": [{ "pattern": "stockbreak.fun", "custom_domain": true }],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": {
+    "CLUSTER": "devnet",
+    "NEXT_PUBLIC_CLUSTER": "devnet",
+    "NEXT_PUBLIC_RPC_URL": "https://api.devnet.solana.com",
+    "NEXT_PUBLIC_WS_URL": "wss://api.devnet.solana.com",
+    "NEXT_PUBLIC_APP_NAME": "Stockbreak",
+    "NEXT_PUBLIC_MCP_URL": "https://stockbreak.fun/api/mcp",
+    "WEB_URL": "https://stockbreak.fun",
+    "MCP_WEB_URL": "https://stockbreak.fun",
+    // Required by the env schema; @repo/db connects through HYPERDRIVE on Workers.
+    "DATABASE_URL": "postgresql://hyperdrive.invalid/uses-binding",
+    "FAUCET_SOL_PER_REQUEST": "0.1",
+    "FAUCET_SOL_DAILY_CAP": "1"
+  }
+}

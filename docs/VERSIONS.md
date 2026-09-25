@@ -55,6 +55,7 @@ Aturan: pakai versi stabil; RC/beta tidak dipakai. Perubahan versi dicatat di `D
 | @modelcontextprotocol/inspector | 2.7.0 |
 | @playwright/test | 1.63.0 (Chromium) |
 | geist | via `next/font` bawaan create-next-app |
+| @opennextjs/cloudflare · wrangler | 1.20.6 · 4.140.0 (deploy Cloudflare, D050) |
 
 ## Layanan eksternal (read-only, gratis)
 | Layanan | Endpoint | Catatan |

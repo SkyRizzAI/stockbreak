@@ -7,7 +7,7 @@ import { WalletButton } from "./wallet-button";
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2.5 text-[19px] font-bold tracking-tight">
+    <Link href="/home" className="flex items-center gap-2.5 text-[19px] font-bold tracking-tight">
       {/* The logo is one of the three places mint is allowed. */}
       <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden>
         <rect width="30" height="30" rx="8" className="fill-primary" />

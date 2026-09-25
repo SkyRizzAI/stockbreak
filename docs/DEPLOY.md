@@ -73,6 +73,8 @@ bun run worker:devnet
 ```
 Perintah ini menjalankan worker + MCP lokal (3333), dengan cluster devnet, DB `DEVNET_DATABASE_URL` (tanpa docker), dan migrasi otomatis. Link `/sign` dari MCP dan URI metadata memakai URL Vercel. Biarkan terminal ini terbuka selama penjurian. Jangan menjalankan `bun run dev:devnet` lain bersamaan, karena dua worker akan mendorong harga dan menjalankan keeper ganda.
 
+Worker ini juga menjalankan **Autopilot** (D047): agent milik user yang autopilot-nya aktif dibangunkan dari sini, bukan dari Vercel. Syaratnya di `.env` mesin worker: `AGENT_KEY_SECRET` **sama persis** dengan nilai di Vercel (untuk membuka seed agent di DB yang sama) dan kunci LLM `AGENT_LLM_API_KEY` (atau `OPENROUTER_API_KEY`), opsional `AGENT_LLM_BASE_URL`/`AGENT_LLM_MODEL`. Kunci LLM **tidak** perlu dan jangan dimasukkan ke Vercel (`vercel:env` tidak menyalinnya). Web di Vercel menampilkan status "available" dari heartbeat worker di tabel `worker_status`; bila worker mati >5 menit, panel Autopilot menampilkan "The autopilot worker is not running on this server." Env opsional: `AUTOPILOT_INTERVAL` (60), `AUTOPILOT_MAX_PER_TICK` (3), `AUTOPILOT_RUN_TIMEOUT` (120), `AUTOPILOT_ENABLED=false` (mematikan), `AUTOPILOT_DRY_RUN=1` (tanpa aksi tulis). Dua worker yang berbagi DB tidak menjalankan agent yang sama dua kali (klaim `FOR UPDATE SKIP LOCKED`), tetapi tetap jangan jalankan dua worker karena loop lain (harga, keeper).
+
 ### A5. Verifikasi
 ```
 bun run check:public -- https://<nama-project>.vercel.app
@@ -101,7 +103,7 @@ Lalu uji manual dengan Phantom (Settings → Developer Settings → Testnet mode
 | `AGENT_KEYPAIR_JSON` | server, **secret** | isi `.keys/agent.json` | opsional, hanya bersama `MCP_AGENT_TOKEN` |
 | `AGENT_KEY_SECRET` | server, **secret** | acak ≥32 karakter (dari `.env`, dibuat `bun run setup`) | opsional; mengaktifkan agent milik user + API key (D045). **Harus sama** dengan nilai yang mengenkripsi agent di DB yang sama; `vercel:env` menyalinnya otomatis |
 
-Tidak perlu di Vercel: `KEEPER_KEYPAIR_PATH`, `AGENT_KEYPAIR_PATH`, `PRICE_*`, `JUPITER_API_KEY`, `FINNHUB_API_KEY`, `MCP_HTTP_PORT`, `MCP_PUBLIC`, `MCP_HOST`, `MCP_ALLOWED_HOSTS`, `*_INTERVAL` (semuanya milik worker/MCP standalone).
+Tidak perlu di Vercel: `AGENT_LLM_*`/`OPENROUTER_*` dan `AUTOPILOT_*` (hanya worker, D047), `KEEPER_KEYPAIR_PATH`, `AGENT_KEYPAIR_PATH`, `PRICE_*`, `JUPITER_API_KEY`, `FINNHUB_API_KEY`, `MCP_HTTP_PORT`, `MCP_PUBLIC`, `MCP_HOST`, `MCP_ALLOWED_HOSTS`, `*_INTERVAL` (semuanya milik worker/MCP standalone).
 
 **Risiko `ADMIN_KEYPAIR_JSON`** (D038): `admin` adalah upgrade authority program, market authority, dan pendana faucet devnet. Menaruhnya di Vercel berarti siapa pun yang punya akses ke project Vercel bisa meng-upgrade program devnet. Hanya pakai bila faucet SOL in-app benar-benar dibutuhkan. Alternatifnya, arahkan juri ke https://faucet.solana.com (pesan faucet sudah menyebutkannya). Bila dipakai, hapus variabelnya setelah penjurian. Aset yang terlibat hanya devnet, tanpa nilai nyata.
 
@@ -156,6 +158,51 @@ Dokumentasi resmi: quick tunnel hanya untuk pengujian. Batasnya 200 request in-f
 5. Setiap kali tunnel dijalankan ulang, URL berubah. Ulangi langkah 3 dengan URL baru (Ctrl+C lalu jalankan lagi), dan perbarui link di submission.
 
 Catatan: laptop dan kedua terminal harus tetap menyala selama penjurian (sampai 2 Okt), dan sleep laptop mematikan demo. Karena URL berubah, opsi ini cocok untuk cadangan atau video. Untuk link submission, gunakan Opsi A.
+
+---
+
+## Opsi C — Cloudflare Workers (web + worker cron, otomatis dari GitHub)
+
+Dipakai sejak D050. Dua Worker dari repo `SkyRizzAI/stockbreak`; Workers Builds mem-build dan men-deploy setiap push ke `main`. Tidak butuh laptop menyala. Butuh **Workers Paid** (paket gratis: CPU 10 ms dan 50 subrequest per request, tidak cukup).
+
+| Worker | Root directory | Isi | URL |
+|---|---|---|---|
+| `stockbreak` | `apps/web` | Next.js via OpenNext, `/api/*`, MCP remote `/api/mcp`, Blink, OG | `https://stockbreak.fun` (+ `stockbreak.<subdomain>.workers.dev`) |
+| `stockbreak-worker` | `apps/worker` | `src/cf.ts`: Cron `* * * * *`, loop worker 40 detik per menit | tanpa URL publik |
+
+DB: Neon Postgres lewat **Hyperdrive** (binding `HYPERDRIVE`, ID di kedua `wrangler.jsonc`). `wrangler.jsonc` tidak berisi rahasia.
+
+### C1. Sekali saja
+1. Neon: buat project, salin URL **direct** ke `.env` sebagai `DEVNET_DATABASE_URL`, lalu isi data: `bun run db:remote -- copy` (atau `migrate` untuk DB kosong).
+2. Hyperdrive: dashboard → Storage & databases → Hyperdrive → Create, dengan URL Neon direct. Salin ID ke `hyperdrive[0].id` di `apps/web/wrangler.jsonc` dan `apps/worker/wrangler.jsonc`.
+3. Domain: `stockbreak.fun` harus ada di akun yang sama (`routes[].custom_domain`); DNS dibuat otomatis saat deploy.
+
+### C2. Hubungkan repo (Workers & Pages → Create → Import a repository), sekali per Worker
+| | `stockbreak` | `stockbreak-worker` |
+|---|---|---|
+| Root directory | `apps/web` | `apps/worker` |
+| Build command | `cd ../.. && bun install --frozen-lockfile && bun run db:remote -- migrate && cd apps/web && bun run cf:build` | `cd ../.. && bun install --frozen-lockfile` |
+| Deploy command | `bun run cf:deploy` | `bun run cf:deploy` |
+| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1`, `CLUSTER=devnet`, `NEXT_PUBLIC_CLUSTER=devnet`, `NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com`, `NEXT_PUBLIC_WS_URL=wss://api.devnet.solana.com`, `NEXT_PUBLIC_APP_NAME=Stockbreak`, `NEXT_PUBLIC_MCP_URL=https://stockbreak.fun/api/mcp`, `WEB_URL=https://stockbreak.fun` | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` |
+| Build secret | `DEVNET_DATABASE_URL` (Neon direct, untuk migrasi) | — |
+| Build watch paths | `apps/web/*`, `apps/mcp/*`, `packages/*`, `bun.lock` | `apps/worker/*`, `apps/mcp/*`, `packages/*`, `bun.lock` |
+
+`NEXT_PUBLIC_*` dan `WEB_URL` di-bake saat `next build`, jadi harus menjadi build variable (nilai di `vars` wrangler hanya untuk runtime). Migrasi (`db:remote -- migrate`) idempoten; bila gagal, build gagal dan versi lama tetap live.
+
+### C3. Secret runtime (Worker → Settings → Variables and Secrets, tipe Secret)
+| Worker | Secret |
+|---|---|
+| `stockbreak` | `RPC_URL` (Helius devnet), `WS_URL`, `AGENT_KEY_SECRET`; opsional `MCP_AGENT_TOKEN` + `AGENT_KEYPAIR_JSON`, `ADMIN_KEYPAIR_JSON` (faucet SOL, lihat risiko D038) |
+| `stockbreak-worker` | `RPC_URL`, `WS_URL`, `ADMIN_KEYPAIR_JSON`, `KEEPER_KEYPAIR_JSON`, `AGENT_KEY_SECRET`; opsional `JUPITER_API_KEY`, `FINNHUB_API_KEY`, `PYTH_API_KEY`, `MAINNET_READ_RPC_URL`, `AGENT_LLM_API_KEY` (autopilot) |
+
+Nilai `*_KEYPAIR_JSON` = isi `.keys/<nama>.json` (array 64 byte, satu baris). `AGENT_KEY_SECRET` harus sama di web, worker, dan server lain yang memakai DB yang sama. Secret tetap ada di antara deploy.
+
+### C4. Verifikasi dan operasional
+- `bun run check:public -- https://stockbreak.fun` → PASS.
+- Log cron: dashboard `stockbreak-worker` → Observability (baris `[worker] window done`).
+- **Jangan** menjalankan `bun run worker:devnet` / `dev:devnet` bersamaan dengan cron (harga & keeper dobel). Untuk menghentikan cron sementara: Settings → Triggers → hapus cron (push berikutnya memasangnya lagi).
+- Uji lokal runtime Workers: `cd apps/web && bun run cf:preview` (butuh `.dev.vars` + `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=<URL Postgres>`); worker: `cd apps/worker && bunx wrangler dev --test-scheduled` lalu buka `/__scheduled`.
+- Workers Paid berakhir → batas CPU 10 ms: web/cron akan gagal. Perpanjang paket atau kembali ke Opsi A/B.
 
 ---
 

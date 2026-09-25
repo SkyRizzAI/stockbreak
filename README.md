@@ -107,7 +107,7 @@ bun run dev          # Surfpool + programs + bootstrap + worker + MCP + web
 bun run seed         # second terminal: demo wallets, 7 indexes, 30 days of history, posts
 ```
 
-Open http://localhost:3000 → **Connect → Dev wallet**. Suggested tour:
+Open http://localhost:3000/home (the landing page is at `/`) → **Connect → Dev wallet**. Suggested tour:
 1. Explore and open MAG4.
 2. Join $100.
 3. Create an index, then share it to the feed as a card.

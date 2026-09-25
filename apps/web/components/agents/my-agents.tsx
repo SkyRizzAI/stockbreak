@@ -27,6 +27,7 @@ import { ApiError, api } from "@/lib/api";
 import { ago, num, short } from "@/lib/format";
 import { ensureSession, socialWrite } from "@/lib/social";
 import { useWallet } from "@/lib/wallet";
+import { type AgentIndexRef, AutopilotPanel } from "./autopilot";
 
 export interface MyKey {
   id: number;
@@ -132,6 +133,15 @@ function KeyReveal({
   onClose: () => void;
 }) {
   const claude = `claude mcp add --transport http stockbreak ${mcpUrl} --header "Authorization: Bearer ${keyValue ?? ""}"`;
+  const json = JSON.stringify(
+    {
+      mcpServers: {
+        stockbreak: { url: mcpUrl, headers: { Authorization: `Bearer ${keyValue ?? ""}` } },
+      },
+    },
+    null,
+    2,
+  );
   const loop = `AGENT_MCP_URL=${mcpUrl} AGENT_MCP_TOKEN=${keyValue ?? ""} bun run agent:loop`;
   return (
     <Dialog open={!!keyValue} onOpenChange={(o) => (o ? null : onClose())}>
@@ -139,7 +149,9 @@ function KeyReveal({
         <DialogHeader>
           <DialogTitle>Your API key</DialogTitle>
           <DialogDescription>
-            Copy it now. It is shown only once; if you lose it, revoke it and create a new one.
+            Copy it now. It is shown only once; if you lose it, revoke it and create a new one. It
+            goes in an Authorization header, so use it in Claude Code, Cursor or a script (Claude.ai
+            and ChatGPT connectors cannot send headers).
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2">
@@ -153,7 +165,8 @@ function KeyReveal({
         </div>
         {[
           ["Claude Code", claude],
-          ["Agent loop", loop],
+          ["Cursor and other clients (mcp.json)", json],
+          ["Self-hosted agent loop (repo checkout)", loop],
         ].map(([t, code]) => (
           <div key={t} className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-sm">
@@ -184,15 +197,29 @@ function AgentRow({
 }) {
   const qc = useQueryClient();
   const bal = useBalances(a.wallet);
+  const pub = useQuery({
+    queryKey: ["agents"],
+    queryFn: () =>
+      api<{ wallet: string; created: AgentIndexRef[]; managed: AgentIndexRef[] }[]>("/api/agents"),
+  });
+  const mine = pub.data?.find((x) => x.wallet === a.wallet);
+  const indexes = [...(mine?.created ?? []), ...(mine?.managed ?? [])];
   const [busy, setBusy] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: ["me-agents"] });
-  const fund = async () => {
+  const fund = async (asset: "SOL" | "USDC") => {
     setBusy(true);
     try {
-      const r = await socialWrite<{ sol: number }>(qc, owner, `/api/me/agents/${a.wallet}/fund`, {
-        method: "POST",
-      });
-      toast.success(`Sent ${r.sol} SOL to ${a.name} for fees`);
+      const r = await socialWrite<{ sol?: number; usdc?: number }>(
+        qc,
+        owner,
+        `/api/me/agents/${a.wallet}/fund`,
+        { method: "POST", body: JSON.stringify({ asset }) },
+      );
+      toast.success(
+        asset === "SOL"
+          ? `Sent ${r.sol} SOL to ${a.name} for fees`
+          : `Minted ${num(r.usdc ?? 0)} test USDC to ${a.name}`,
+      );
       await qc.invalidateQueries({ queryKey: ["balances", a.wallet] });
       void bal.refetch();
     } catch (e) {
@@ -222,12 +249,23 @@ function AgentRow({
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <span className="mono">{short(a.wallet)}</span>
             <CopyButton text={a.wallet} label="Copy agent address" />
-            <span>· {bal.data ? `${num(bal.data.sol)} SOL` : "…"}</span>
+            <span>
+              · {bal.data ? `${num(bal.data.sol)} SOL · ${num(bal.data.usdc)} USDC` : "…"}
+            </span>
           </span>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void fund()}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void fund("SOL")}>
             {busy ? "Sending…" : "Fund SOL"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || !bal.data || bal.data.sol < 0.002}
+            onClick={() => void fund("USDC")}
+            title={bal.data && bal.data.sol < 0.002 ? "Fund SOL first" : undefined}
+          >
+            Get USDC
           </Button>
           <Button size="sm" onClick={() => onNewKey(a)} data-testid="new-key">
             <KeyRound />
@@ -235,9 +273,19 @@ function AgentRow({
           </Button>
         </div>
       </div>
-      {bal.data && bal.data.sol < 0.01 ? (
-        <p className="text-xs text-warn">
-          This agent needs a little SOL to pay transaction fees. Use Fund SOL.
+      {bal.data ? (
+        <p className="text-xs text-muted-foreground" data-testid="agent-next-step">
+          <span className="text-foreground">Next: </span>
+          {bal.data.sol < 0.01 ? (
+            <span className="text-warn">give it a little SOL for transaction fees (Fund SOL).</span>
+          ) : !indexes.length ? (
+            <>
+              let it manage an index: open your index&apos;s Manage page and add{" "}
+              <span className="text-foreground">{a.name}</span> under Managers &amp; AI agents.
+            </>
+          ) : (
+            "turn on Autopilot below, or create an API key to drive it from your own AI."
+          )}
         </p>
       ) : null}
       {a.keys.length ? (
@@ -273,13 +321,11 @@ function AgentRow({
         </ul>
       ) : (
         <p className="text-xs text-muted-foreground">
-          No API keys yet. Create one to connect this agent to Claude Code or the agent loop.
+          No API keys yet. You only need one to drive this agent from your own AI client (Claude
+          Code, Cursor…). Autopilot works without a key.
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
-        To let it manage an index, open the index&apos;s Manage page and add{" "}
-        <span className="text-foreground">{a.name}</span> under Managers &amp; AI agents.
-      </p>
+      <AutopilotPanel wallet={a.wallet} owner={owner} indexes={indexes} />
     </li>
   );
 }

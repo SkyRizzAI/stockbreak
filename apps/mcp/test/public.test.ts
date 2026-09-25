@@ -98,6 +98,14 @@ describe("public MCP endpoint", () => {
   test("correct bearer: agent_* listed", async () => {
     const names = await toolNames(`Bearer ${TOKEN}`);
     expect(names).toContain("agent_info");
+    for (const n of [
+      "agent_redeem",
+      "agent_claim_fees",
+      "agent_apply_update",
+      "agent_cancel_update",
+      "agent_get_test_usdc",
+    ])
+      expect(names).toContain(n);
   });
 
   test("token compare", () => {

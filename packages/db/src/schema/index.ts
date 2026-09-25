@@ -291,3 +291,58 @@ export const apiKeys = pgTable(
   },
   (t) => [index("api_keys_agent_idx").on(t.agentWallet), index("api_keys_owner_idx").on(t.owner)],
 );
+
+// ---------------- hosted autopilot (D047) ----------------
+
+/**
+ * Per-agent autopilot settings: the worker wakes enabled agents every
+ * `interval_minutes` and runs one LLM decision cycle with the MCP tools (D047).
+ * `run_requested` = a manual "run now" (runs once even when disabled).
+ */
+export const agentAutopilot = pgTable(
+  "agent_autopilot",
+  {
+    agentWallet: text("agent_wallet")
+      .primaryKey()
+      .references(() => agentWallets.wallet),
+    enabled: boolean("enabled").notNull().default(false),
+    intervalMinutes: integer("interval_minutes").notNull().default(30),
+    strategy: text("strategy").notNull().default(""),
+    /** Index pubkeys to manage; empty = every index the agent created or manages. */
+    indexes: jsonb("indexes").$type<string[]>().notNull().default([]),
+    runRequested: boolean("run_requested").notNull().default(false),
+    lastManualRunAt: ts("last_manual_run_at"),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+    lastRunAt: ts("last_run_at"),
+    nextRunAt: ts("next_run_at"),
+  },
+  (t) => [index("agent_autopilot_due_idx").on(t.nextRunAt)],
+);
+
+/** Autopilot run log (last 50 per agent are kept). */
+export const agentRuns = pgTable(
+  "agent_runs",
+  {
+    id: serial("id").primaryKey(),
+    agentWallet: text("agent_wallet")
+      .notNull()
+      .references(() => agentWallets.wallet),
+    startedAt: ts("started_at").notNull().defaultNow(),
+    finishedAt: ts("finished_at"),
+    /** running | ok | noop | error */
+    status: text("status").notNull().default("running"),
+    summary: text("summary").notNull().default(""),
+    actions: jsonb("actions")
+      .$type<{ tool: string; ok: boolean; detail: string }[]>()
+      .notNull()
+      .default([]),
+  },
+  (t) => [index("agent_runs_agent_idx").on(t.agentWallet, t.startedAt)],
+);
+
+/** Liveness of worker loops that the web reports (e.g. autopilot availability, D047). */
+export const workerStatus = pgTable("worker_status", {
+  name: text("name").primaryKey(),
+  info: jsonb("info").$type<Record<string, unknown>>().notNull().default({}),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});

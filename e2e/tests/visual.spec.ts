@@ -41,7 +41,8 @@ for (const scheme of ["light", "dark"] as const)
 
       test("pages", async ({ page }) => {
         const pages: [string, string][] = [
-          ["home", "/"],
+          ["landing", "/"],
+          ["home", "/home"],
           ["explore", "/explore"],
           ["index", `/i/${index}`],
           ["leaderboard", "/leaderboard"],
@@ -61,7 +62,7 @@ for (const scheme of ["light", "dark"] as const)
       });
 
       test("connected states", async ({ page }) => {
-        await page.goto("/");
+        await page.goto("/home");
         await connectDevWallet(page);
         await page.goto(`/i/${index}`);
         await shot(page, `${tag}-index-connected`);

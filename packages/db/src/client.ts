@@ -58,9 +58,52 @@ export function connectionOptions(raw: string): { url: string; options: PgOption
   return { url: u.toString(), options };
 }
 
-/** One pooled client per URL (survives Next.js dev HMR). */
+/**
+ * Cloudflare Workers (docs/DEPLOY.md, D046): a socket opened by one request can't be
+ * used by another, so the Db handed out there is a proxy that resolves, on each access,
+ * to a client owned by the current request. The request scope is the one OpenNext
+ * exposes (and apps/worker/src/cf.ts mirrors) on `Symbol.for("__cloudflare-context__")`;
+ * the connection string comes from its Hyperdrive binding when present.
+ */
+interface CfScope {
+  env?: { HYPERDRIVE?: { connectionString: string } };
+  ctx?: object;
+}
+const onWorkers = typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+const cfScope = (): CfScope | undefined =>
+  (globalThis as unknown as Record<symbol, CfScope | undefined>)[
+    Symbol.for("__cloudflare-context__")
+  ];
+const perRequest = new WeakMap<object, { db: Db; sql: postgres.Sql }>();
+
+function requestClient(url: string): { db: Db; sql: postgres.Sql } {
+  const scope = cfScope();
+  if (!scope?.ctx) throw new Error("Database used outside a Cloudflare request context");
+  let hit = perRequest.get(scope.ctx);
+  if (!hit) {
+    const hyperdrive = scope.env?.HYPERDRIVE?.connectionString;
+    const c = connectionOptions(url);
+    // Hyperdrive options per its postgres.js guide; without it, one direct connection.
+    const sql = hyperdrive
+      ? postgres(hyperdrive, { max: 5, fetch_types: false, prepare: true, onnotice: () => {} })
+      : postgres(c.url, { ...c.options, max: 1, onnotice: () => {} });
+    hit = { db: drizzle({ client: sql, schema }), sql };
+    perRequest.set(scope.ctx, hit);
+  }
+  return hit;
+}
+
+/** One pooled client per URL (survives Next.js dev HMR); one per request on Workers. */
 export function getDb(url = process.env.DATABASE_URL): Db {
   if (!url) throw new Error("DATABASE_URL is not set");
+  if (onWorkers)
+    return new Proxy({} as Db, {
+      get(_target, prop) {
+        const real = requestClient(url).db as unknown as Record<string | symbol, unknown>;
+        const v = Reflect.get(real, prop);
+        return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(real) : v;
+      },
+    });
   cache.__stocklanaDb ??= new Map();
   const hit = cache.__stocklanaDb.get(url);
   if (hit) return hit.db;
@@ -72,6 +115,13 @@ export function getDb(url = process.env.DATABASE_URL): Db {
 }
 
 export async function closeDb(url = process.env.DATABASE_URL): Promise<void> {
+  if (onWorkers) {
+    const ctx = cfScope()?.ctx;
+    const hit = ctx ? perRequest.get(ctx) : undefined;
+    if (ctx) perRequest.delete(ctx);
+    if (hit) await hit.sql.end({ timeout: 5 });
+    return;
+  }
   if (!url) return;
   const hit = cache.__stocklanaDb?.get(url);
   if (!hit) return;

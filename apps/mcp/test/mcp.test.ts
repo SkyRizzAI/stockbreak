@@ -66,6 +66,11 @@ d("discovery", () => {
       "agent_rebalance",
       "agent_propose_update",
       "agent_post",
+      "agent_redeem",
+      "agent_claim_fees",
+      "agent_apply_update",
+      "agent_cancel_update",
+      "agent_get_test_usdc",
     ])
       expect(names).toContain(n);
     for (const t of tools) expect(t.description?.length ?? 0).toBeGreaterThan(20);

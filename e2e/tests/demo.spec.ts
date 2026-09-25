@@ -64,7 +64,7 @@ test.beforeAll(() => {
 
 test("01 markets", async ({ browser }) => {
   await scene(browser, "01-markets", async (page) => {
-    await page.goto("/");
+    await page.goto("/home");
     await beat(page, 2500);
     await smoothScroll(page, 900);
     await beat(page);

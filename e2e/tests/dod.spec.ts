@@ -110,7 +110,7 @@ test.beforeAll(async ({ browser: b, request }) => {
       baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     });
     const page = await context.newPage();
-    await page.goto("/");
+    await page.goto("/home");
     await connectDevWallet(page);
     ctx[who] = { context, page };
   }

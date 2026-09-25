@@ -5,15 +5,17 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { KV, NotFoundState, SimulatedBadge } from "@/components/data/states";
+import { pendingLines } from "@/components/index/pending-update";
 import { openConnect } from "@/components/shell/wallet-button";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { short, usd } from "@/lib/format";
+import { duration, short, usd } from "@/lib/format";
 import { txUrl } from "@/lib/solana";
 import { signAndSendBase64 } from "@/lib/tx";
 import { txOverlay } from "@/lib/tx-overlay";
+import type { PendingUpdateJson, StrategyJson } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
 
 interface Intent {
@@ -38,9 +40,100 @@ interface Step {
   summary: string | null;
 }
 
+/** Single-step index management intents (D048). */
+const MANAGE = new Set([
+  "propose_update",
+  "apply_update",
+  "cancel_update",
+  "set_paused",
+  "set_managers",
+  "claim_fees",
+]);
+
+const lines = (pending: unknown): [string, string][] =>
+  pending ? pendingLines(pending as PendingUpdateJson).map((l) => [l.label, l.value]) : [];
+
 function describe(it: Intent): { title: string; rows: [string, string][] } {
   const p = it.params;
+  const sym = String(p.indexSymbol ?? short(String(p.index ?? "")));
+  const list = (xs: unknown) =>
+    ((xs as string[] | undefined) ?? []).map((x) => (x.length > 20 ? short(x) : x)).join(", ") ||
+    "None";
   switch (it.kind) {
+    case "propose_update": {
+      const tl = Number(p.timelockSecs ?? 0);
+      const assets = p.assets as { mint: string; symbol?: string; weightBps: number }[] | null;
+      const kept = (p.kept as string[] | undefined) ?? [];
+      return {
+        title: `Propose update to ${sym}`,
+        rows: [
+          ...lines({
+            eta: 0,
+            assets: assets
+              ? assets.map((a) => ({
+                  mint: a.mint,
+                  symbol: a.symbol ?? short(a.mint),
+                  targetWeightBps: a.weightBps,
+                }))
+              : null,
+            fees: p.fees ?? null,
+            strategy: (p.strategy as StrategyJson | null) ?? null,
+          }),
+          ...(kept.length
+            ? ([["Kept at 0% until sold", kept.join(", ")]] as [string, string][])
+            : []),
+          [
+            "Applies",
+            p.immediate
+              ? "Immediately (fee cut)"
+              : tl > 0
+                ? `After a ${duration(tl)} timelock, then someone applies it`
+                : "Right after signing, once applied",
+          ],
+          ...(p.replacesPending
+            ? ([["Replaces", "The current pending update"]] as [string, string][])
+            : []),
+        ],
+      };
+    }
+    case "apply_update":
+    case "cancel_update":
+      return {
+        title: `${it.kind === "apply_update" ? "Apply" : "Cancel"} the update to ${sym}`,
+        rows: [
+          ...lines(p.pending),
+          ["Scheduled for", p.eta ? new Date(Number(p.eta) * 1000).toLocaleString() : "Unknown"],
+        ],
+      };
+    case "set_paused":
+      return {
+        title: `${p.paused ? "Pause" : "Resume"} ${sym}`,
+        rows: [
+          [
+            "Effect",
+            p.paused
+              ? "Stops joins and rebalances. Redeem keeps working."
+              : "Joins and rebalances work again.",
+          ],
+        ],
+      };
+    case "set_managers":
+      return {
+        title: `Set managers of ${sym}`,
+        rows: [
+          ["Before", list(p.before)],
+          ["After", list(p.labels ?? p.managers)],
+          ["Managers can", "Rebalance only. They cannot change weights, fees or withdraw."],
+        ],
+      };
+    case "claim_fees":
+      return {
+        title: p.kind === "royalty" ? `Claim royalty from ${sym}` : `Claim creator fees on ${sym}`,
+        rows: [
+          ["Owed so far", `${(Number(p.owedShares ?? 0) / 1e6).toLocaleString("en-US")} shares`],
+          ["Paid as", `${sym} shares (plus fees accrued since)`],
+        ],
+      };
     case "join":
       return {
         title: `Join ${String(p.indexName ?? p.indexSymbol ?? "index")}`,
@@ -140,9 +233,11 @@ export function SignView() {
     const all: string[] = [];
     let n = 0;
     const creating = it.kind === "create_index" || it.kind === "clone";
+    const manage = MANAGE.has(it.kind);
     const p = it.params;
     // Server steps → overlay phases (same names as the in-app flows).
     const keyOf = (label: string) => {
+      if (manage) return "confirm";
       if (/lookup/i.test(label)) return "lookup-table";
       if (/^create/i.test(label)) return "create";
       if (/redeem/i.test(label)) return "redeem";
@@ -151,17 +246,19 @@ export function SignView() {
     };
     txOverlay.start(
       d.title,
-      it.kind === "join"
-        ? ["swap", "join"]
-        : it.kind === "redeem"
-          ? p.toUsdc === false
-            ? ["redeem"]
-            : ["redeem", "swap"]
-          : [
-              ...(((p.assets as unknown[]) ?? []).length >= 5 ? ["lookup-table"] : []),
-              "create",
-              ...(Number(p.depositUsdc ?? 0) > 0 ? ["deposit-swap", "deposit-join"] : []),
-            ],
+      manage
+        ? ["confirm"]
+        : it.kind === "join"
+          ? ["swap", "join"]
+          : it.kind === "redeem"
+            ? p.toUsdc === false
+              ? ["redeem"]
+              : ["redeem", "swap"]
+            : [
+                ...(((p.assets as unknown[]) ?? []).length >= 5 ? ["lookup-table"] : []),
+                "create",
+                ...(Number(p.depositUsdc ?? 0) > 0 ? ["deposit-swap", "deposit-join"] : []),
+              ],
     );
     try {
       // The server tracks progress and hands out the next unfinished step, so a

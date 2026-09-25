@@ -5,6 +5,7 @@ import { agentKeyConfigured, getCtx, type McpCtx } from "./ctx";
 import { GUIDE } from "./guide";
 import { registerAgentTools } from "./tools/agent";
 import { registerIntentTools } from "./tools/intents";
+import { registerManageTools } from "./tools/manage";
 import { registerReadTools } from "./tools/read";
 import { registerSimulateTool } from "./tools/simulate";
 
@@ -39,6 +40,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   registerReadTools(s, ctx);
   registerSimulateTool(s, ctx);
   registerIntentTools(s, ctx);
+  registerManageTools(s, ctx);
   // Agent wallet mode only with a per-request agent or a configured keypair (PLAN §7.6).
   if (opts.agentTools ?? (!!opts.agent || agentKeyConfigured())) registerAgentTools(s, ctx);
   s.registerResource(

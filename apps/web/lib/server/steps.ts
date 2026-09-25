@@ -6,9 +6,13 @@ import "server-only";
  */
 import { getIndex } from "@repo/db";
 import {
+  applyUpdateIx,
   assertFreshPrices,
   ata,
   buildUnsignedTxBase64,
+  cancelUpdateIx,
+  chainClock,
+  claimFeesIxs,
   createAltIxs,
   createAtaIx,
   createIndexIx,
@@ -17,6 +21,7 @@ import {
   fetchTokenBalances,
   fitInitialAmounts,
   fits,
+  type IndexState,
   indexAltAddresses,
   indexPda,
   joinIxs,
@@ -24,9 +29,13 @@ import {
   market,
   math,
   pack,
+  parentOf,
   planZapIn,
   planZapOut,
+  proposeUpdateIx,
   redeemIxs,
+  setManagersIx,
+  setPausedIx,
   shareMintPda,
   swapIx,
   TOKEN_PROGRAM,
@@ -34,7 +43,7 @@ import {
   vault,
   waitAltActive,
 } from "@repo/sdk";
-import { type Address, createNoopSigner, type Instruction } from "@solana/kit";
+import { type Address, createNoopSigner, type Instruction, isAddress } from "@solana/kit";
 import { chain, db, requireDeployment } from "./ctx";
 import { UserError } from "./http";
 import { saveLookupTable } from "./index-row";
@@ -396,4 +405,184 @@ export async function createStep(
     next: r.next === null ? null : 10 + r.next,
     state: { ...state, join: r.state },
   };
+}
+
+// ---------------- manage (assistant mode, D048) ----------------
+// Single-step intents. Each re-checks on chain that the connected wallet is the one the
+// program accepts, so a wrong wallet fails here (403) before anything is signed.
+
+export type ManageKind =
+  | "propose_update"
+  | "apply_update"
+  | "cancel_update"
+  | "set_paused"
+  | "set_managers"
+  | "claim_fees";
+
+export const MANAGE_KINDS: readonly string[] = [
+  "propose_update",
+  "apply_update",
+  "cancel_update",
+  "set_paused",
+  "set_managers",
+  "claim_fees",
+];
+
+interface ProposeStored {
+  assets: { mint: string; symbol?: string; weightBps: number }[] | null;
+  fees: { mgmtFeeBps: number; entryFeeBps: number; exitFeeBps: number } | null;
+  strategy: {
+    mode: "Manual" | "Threshold" | "Periodic";
+    driftThresholdBps: number;
+    periodSecs: number;
+    maxSlippageBps: number;
+    cooldownSecs: number;
+    allowKeeper: boolean;
+  } | null;
+}
+
+const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+
+function requireCreator(st: IndexState, account: Address, action: string): void {
+  if (st.creator !== account)
+    throw new UserError(
+      `Only the creator of ${st.symbol} (${short(st.creator)}) can ${action}. Connect that wallet.`,
+      403,
+    );
+}
+
+function requireIdle(st: IndexState): void {
+  if (st.rebalanceTicket.__option === "Some")
+    throw new UserError(`${st.symbol} is rebalancing. Try again in a minute.`, 409);
+}
+
+/** Target list with every funded asset the proposal leaves out kept at 0% (vault rule). */
+function withKept(
+  st: IndexState,
+  assets: { mint: string; weightBps: number }[],
+): { mint: Address; weightBps: number }[] {
+  const out = assets.map((a) => ({ mint: a.mint as Address, weightBps: a.weightBps }));
+  for (const e of st.assets)
+    if (e.balance > 0n && !out.some((x) => x.mint === e.mint))
+      out.push({ mint: e.mint, weightBps: 0 });
+  if (out.length > 10)
+    throw new UserError(
+      "Too many assets: some left-out assets still hold a balance and must stay at 0% until sold. Ask the agent for a smaller update.",
+    );
+  return out;
+}
+
+export async function manageStep(
+  account: Address,
+  kind: ManageKind,
+  params: Record<string, unknown>,
+): Promise<StepResult> {
+  const c = chain();
+  const user = createNoopSigner(account);
+  const index = params.index as Address;
+  const st = await fetchIndex(c, index);
+  requireIdle(st);
+  const one = async (label: string, ixs: Instruction[], summary: string, cu = 400_000) => ({
+    step: 0,
+    label,
+    txs: await toTxs(account, [ixs], await lookupTableOf(index), cu),
+    next: null,
+    // `index` lets /sign link to the index once done.
+    state: { index },
+    summary,
+  });
+  switch (kind) {
+    case "propose_update": {
+      requireCreator(st, account, "propose updates");
+      const p = params as unknown as ProposeStored;
+      if (!p.assets && !p.fees && !p.strategy) throw new UserError("Nothing to update");
+      if (p.assets && st.followsParent)
+        throw new UserError(`${st.symbol} follows its parent: its weights cannot be changed.`);
+      const ix = await proposeUpdateIx(user, index, st, {
+        assets: p.assets ? withKept(st, p.assets) : undefined,
+        fees: p.fees ?? undefined,
+        strategy: p.strategy ? { ...p.strategy, mode: MODE[p.strategy.mode] } : undefined,
+      });
+      return one("Propose the update", [ix], `Propose an update to ${st.symbol}`);
+    }
+    case "apply_update": {
+      if (st.pendingUpdate.__option !== "Some")
+        throw new UserError(`${st.symbol} has no pending update (applied or cancelled).`, 409);
+      const eta = Number(st.pendingUpdate.value.eta);
+      const now = Number(await chainClock(c));
+      if (eta > now)
+        throw new UserError(
+          `Too early: this update can be applied after ${new Date(eta * 1000).toLocaleString("en-US")} (chain time).`,
+          409,
+        );
+      return one(
+        "Apply the update",
+        [await applyUpdateIx(user, index, st)],
+        `Apply the pending update to ${st.symbol}`,
+        600_000,
+      );
+    }
+    case "cancel_update": {
+      requireCreator(st, account, "cancel updates");
+      if (st.pendingUpdate.__option !== "Some")
+        throw new UserError(`${st.symbol} has no pending update to cancel.`, 409);
+      return one(
+        "Cancel the update",
+        [await cancelUpdateIx(user, index)],
+        `Cancel the pending update to ${st.symbol}`,
+      );
+    }
+    case "set_paused": {
+      const paused = params.paused === true;
+      requireCreator(st, account, paused ? "pause it" : "resume it");
+      if (st.paused === paused)
+        throw new UserError(`${st.symbol} is already ${paused ? "paused" : "active"}.`, 409);
+      return one(
+        paused ? "Pause the index" : "Resume the index",
+        [await setPausedIx(user, index, paused)],
+        `${paused ? "Pause" : "Resume"} ${st.symbol}`,
+      );
+    }
+    case "set_managers": {
+      requireCreator(st, account, "set managers");
+      const managers = (params.managers as string[] | undefined) ?? [];
+      if (managers.length > 3) throw new UserError("At most 3 managers");
+      if (managers.some((m) => !isAddress(m)) || new Set(managers).size !== managers.length)
+        throw new UserError("Managers must be distinct wallet addresses");
+      return one(
+        "Set managers",
+        [await setManagersIx(user, index, managers as Address[])],
+        `Set the managers of ${st.symbol}`,
+      );
+    }
+    case "claim_fees": {
+      const royalty = params.kind === "royalty";
+      let parent: Address | undefined;
+      if (royalty) {
+        const p = parentOf(st);
+        if (!p) throw new UserError(`${st.symbol} is not a clone: it owes no royalty.`);
+        const ps = await fetchIndex(c, p);
+        if (ps.creator !== account)
+          throw new UserError(
+            `Only the parent's creator (${short(ps.creator)}) can claim this royalty. Connect that wallet.`,
+            403,
+          );
+        parent = p;
+      } else requireCreator(st, account, "claim its creator fees");
+      const owed = royalty ? st.owedParentShares : st.owedCreatorShares;
+      if (owed === 0n && st.fees.mgmtFeeBps === 0)
+        throw new UserError(`Nothing to claim on ${st.symbol} yet.`, 409);
+      return one(
+        royalty ? "Claim royalty" : "Claim fees",
+        await claimFeesIxs(
+          user,
+          index,
+          st,
+          royalty ? vault.FeeKind.Parent : vault.FeeKind.Creator,
+          parent,
+        ),
+        `${royalty ? "Claim the royalty" : "Claim creator fees"} on ${st.symbol}`,
+      );
+    }
+  }
 }

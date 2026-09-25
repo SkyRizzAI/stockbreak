@@ -3,7 +3,7 @@ import { ASSETS, type Deployment, parseEnv, type WorkerEnv, workerEnvSchema } fr
 import { readDeployment } from "@repo/config/node";
 import { type Db, getDb } from "@repo/db";
 import { chainClock, createCtx, type SolanaCtx } from "@repo/sdk";
-import { loadSigner } from "@repo/sdk/node";
+import { loadSignerFrom } from "@repo/sdk/node";
 import type { Address, KeyPairSigner } from "@solana/kit";
 
 export interface WorkerCtx extends SolanaCtx {
@@ -34,8 +34,8 @@ export async function createWorkerCtx(): Promise<WorkerCtx> {
     ...chain,
     env,
     db: getDb(env.DATABASE_URL),
-    admin: await loadSigner(env.ADMIN_KEYPAIR_PATH),
-    keeper: await loadSigner(env.KEEPER_KEYPAIR_PATH),
+    admin: await loadSignerFrom(env.ADMIN_KEYPAIR_JSON, env.ADMIN_KEYPAIR_PATH),
+    keeper: await loadSignerFrom(env.KEEPER_KEYPAIR_JSON, env.KEEPER_KEYPAIR_PATH),
     deployment,
     symbolOf,
     log: (scope, msg) =>

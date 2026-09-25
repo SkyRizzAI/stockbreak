@@ -58,6 +58,8 @@ export const serverEnvSchema = chainEnvSchema.extend({
   ADMIN_KEYPAIR_PATH: z.string().default(".keys/admin.json"),
   ADMIN_KEYPAIR_JSON: keypairJson,
   KEEPER_KEYPAIR_PATH: z.string().default(".keys/keeper.json"),
+  /** Keeper secret key as a JSON byte array (hosts without `.keys/`, e.g. the Cloudflare cron). */
+  KEEPER_KEYPAIR_JSON: keypairJson,
   AGENT_KEYPAIR_PATH: z
     .string()
     .optional()
@@ -73,6 +75,14 @@ export const serverEnvSchema = chainEnvSchema.extend({
   AGENT_KEY_SECRET: z.string().optional(),
 });
 
+function flagSchema() {
+  return z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true");
+}
+const flag = flagSchema();
+
 export const workerEnvSchema = serverEnvSchema.extend({
   PRICE_MODE: z.enum(["live", "random"]).default("live"),
   JUPITER_API_KEY: z.string().optional(),
@@ -87,12 +97,22 @@ export const workerEnvSchema = serverEnvSchema.extend({
   FEES_INTERVAL: secs(300),
   FOLLOW_INTERVAL: secs(30),
   GAMIFICATION_INTERVAL: secs(60),
+  /**
+   * Hosted autopilot (D047). Tick in seconds; AUTOPILOT_ENABLED=false turns the loop off
+   * (default on when an LLM key and AGENT_KEY_SECRET exist). LLM settings are read where
+   * used (@repo/mcp/autopilot llmConfigFromEnv); empty values fall back to OPENROUTER_*.
+   */
+  AUTOPILOT_INTERVAL: secs(60),
+  AUTOPILOT_ENABLED: z.string().optional(),
+  AUTOPILOT_MAX_PER_TICK: z.coerce.number().int().positive().default(3),
+  AUTOPILOT_RUN_TIMEOUT: secs(120),
+  AUTOPILOT_DRY_RUN: flagSchema(),
+  AGENT_LLM_BASE_URL: z.string().optional(),
+  AGENT_LLM_API_KEY: z.string().optional(),
+  AGENT_LLM_MODEL: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().optional(),
 });
-
-const flag = z
-  .string()
-  .optional()
-  .transform((v) => v === "1" || v === "true");
 
 /**
  * Exposure settings of the MCP HTTP endpoints (standalone server and the web route

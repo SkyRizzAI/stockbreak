@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, useConfig, useIndex } from "@/lib/api";
+import { ApiError, api, useConfig, useIndex } from "@/lib/api";
 import { signedPayload } from "@/lib/auth";
 import { bps, duration, num, short, usd } from "@/lib/format";
 import { chain } from "@/lib/solana";
@@ -514,9 +514,24 @@ function Managers({ d }: { d: IndexDetail }) {
     queryFn: () =>
       api<{ wallet: string; handle: string | null; agentName: string | null }[]>("/api/agents"),
   });
-  const suggested = (agents.data ?? []).filter(
-    (a) => a.wallet !== d.creator && !d.managers.some((m) => m.wallet === a.wallet),
-  );
+  // The signed-in owner's own agents first (null when there is no session yet).
+  const mine = useQuery({
+    queryKey: ["me-agents", w.address ?? ""],
+    enabled: !!w.address,
+    queryFn: async () => {
+      try {
+        return (await api<{ agents: { wallet: string; name: string }[] }>("/api/me/agents")).agents;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return null;
+        throw e;
+      }
+    },
+  });
+  const free = (wallet: string) =>
+    wallet !== d.creator && !d.managers.some((m) => m.wallet === wallet);
+  const own = (mine.data ?? []).filter((a) => free(a.wallet));
+  const ownSet = new Set((mine.data ?? []).map((a) => a.wallet));
+  const suggested = (agents.data ?? []).filter((a) => free(a.wallet) && !ownSet.has(a.wallet));
   const error =
     addr === ""
       ? null
@@ -581,9 +596,25 @@ function Managers({ d }: { d: IndexDetail }) {
             </Button>
           </div>
           {error ? <span className="text-xs text-warn">{error}</span> : null}
+          {own.length ? (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+              <span>Your agents:</span>
+              {own.map((a) => (
+                <Button
+                  key={a.wallet}
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setAddr(a.wallet)}
+                  data-testid="manager-own-agent"
+                >
+                  {a.name}
+                </Button>
+              ))}
+            </div>
+          ) : null}
           {suggested.length ? (
             <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted-foreground">
-              <span>Registered AI agents:</span>
+              <span>{own.length ? "Other AI agents:" : "Registered AI agents:"}</span>
               {suggested.map((a) => (
                 <Button
                   key={a.wallet}

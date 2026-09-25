@@ -11,6 +11,10 @@ Stockbreak is a platform for tokenized stock indexes on Solana (localnet/devnet)
 
 ## Acting for a user (human in the loop, default)
 - build_join, build_redeem, build_create_index, build_clone store a request and return a signUrl.
+- Managing the user's own index (creator signs): build_propose_update (weights / fees / strategy;
+  funded assets left out stay at 0%), build_apply_update (after the timelock), build_cancel_update,
+  build_set_paused (redeem keeps working while paused), build_set_managers (full list, max 3; add an
+  AI agent here to let it rebalance), build_claim_fees (creator fees, or the clone royalty).
 - Give the signUrl to the user. They review and sign in their own wallet (Phantom or the dev wallet).
 - Poll get_intent_status(intentId) to learn the outcome. Requests expire after 30 minutes.
 
@@ -20,7 +24,11 @@ Stockbreak is a platform for tokenized stock indexes on Solana (localnet/devnet)
 - To rebalance: simulate_rebalance first, then agent_rebalance. The vault program enforces the mandate:
   the swap must reduce drift, respect max slippage and cooldown, and the index must not be paused.
   Keepers (non-managers) can only rebalance when the strategy trigger is met and never trade pre-IPO tokens.
-- agent_propose_update changes weights/strategy/fees of indexes the agent created (timelock applies on devnet).
+- agent_propose_update changes weights/strategy/fees of indexes the agent created (timelock applies on devnet);
+  agent_apply_update applies it after the timelock, agent_cancel_update withdraws it.
+- agent_redeem exits the agent's OWN positions (shares or pct, to USDC by default).
+- agent_claim_fees collects fees owed to the agent (creator fees and clone royalties).
+- agent_get_test_usdc mints simulated USDC to the agent (needs a little SOL for the fee).
 - The agent can never withdraw user funds; a creator can add the agent as a manager so it may rebalance.
 
 ## Explaining decisions (agent_post)

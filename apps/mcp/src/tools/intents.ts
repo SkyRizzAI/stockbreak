@@ -36,7 +36,7 @@ const wallet = z
   .optional()
   .describe("Only this wallet may sign (optional)");
 
-async function store(c: McpCtx, kind: string, params: Record<string, unknown>, w?: string) {
+export async function store(c: McpCtx, kind: string, params: Record<string, unknown>, w?: string) {
   const id = crypto.randomUUID();
   await createIntent(c.db, {
     id,
@@ -53,7 +53,7 @@ async function store(c: McpCtx, kind: string, params: Record<string, unknown>, w
   };
 }
 
-const next =
+export const next =
   "Send the signUrl to the user. They review and sign in their wallet; poll get_intent_status for the result.";
 
 export function registerIntentTools(s: McpServer, ctx: () => Promise<McpCtx>): void {

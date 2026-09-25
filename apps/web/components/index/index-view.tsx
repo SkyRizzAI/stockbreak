@@ -1,7 +1,7 @@
 "use client";
 import { Copy, Download, Link2, MessagesSquare, Share2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { UserLink } from "@/components/data/addr";
 import { AllocationBar, AllocationLegend } from "@/components/data/allocation";
@@ -293,6 +293,19 @@ export function IndexView({ pubkey }: { pubkey: string }) {
   const w = useWallet();
   const [range, setRange] = useState("1M");
   const [bench, setBench] = useState(true);
+  // The open tab lives in the URL (?tab=discussion) so reloads and shared links keep it.
+  const [tab, setTab] = useState("activity");
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t) setTab(t);
+  }, []);
+  const openTab = (v: string) => {
+    setTab(v);
+    const u = new URL(window.location.href);
+    if (v === "activity") u.searchParams.delete("tab");
+    else u.searchParams.set("tab", v);
+    window.history.replaceState(window.history.state, "", u);
+  };
   if (q.isLoading)
     return (
       <div className="mx-auto grid max-w-[1280px] gap-6 px-4 py-8 md:px-8 lg:grid-cols-[1fr_360px]">
@@ -362,6 +375,17 @@ export function IndexView({ pubkey }: { pubkey: string }) {
                       className="text-foreground"
                     />
                   </span>
+                  {d.parent && !d.followsParent ? (
+                    <span data-testid="clone-of">
+                      clone of{" "}
+                      <Link
+                        href={`/i/${d.parent}`}
+                        className="mono text-foreground hover:underline"
+                      >
+                        {d.parentSymbol ?? short(d.parent)}
+                      </Link>
+                    </span>
+                  ) : null}
                   <IndexTags i={d} />
                   <SimulatedBadge />
                 </div>
@@ -514,7 +538,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
         </div>
 
         {/* Long, browse-on-demand lists live in tabs so the decision content above stays short. */}
-        <Tabs defaultValue="activity">
+        <Tabs value={tab} onValueChange={(v) => openTab(String(v))}>
           <TabsList variant="line" className="max-w-full justify-start overflow-x-auto">
             <TabsTrigger value="activity">Activity</TabsTrigger>
             <TabsTrigger value="holders">

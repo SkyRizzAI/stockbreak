@@ -52,6 +52,20 @@ async function loadAgent(env: McpEnv): Promise<KeyPairSigner | null> {
   return env.AGENT_KEYPAIR_PATH ? loadSigner(env.AGENT_KEYPAIR_PATH) : null;
 }
 
+/**
+ * On Cloudflare Workers (/api/mcp served by the web Worker) a Worker can't fetch its own
+ * public URL (error 1042): call the web API through OpenNext's self service binding.
+ */
+function selfFetch(): typeof fetch {
+  const self = (
+    globalThis as unknown as Record<
+      symbol,
+      { env?: { WORKER_SELF_REFERENCE?: { fetch: typeof fetch } } } | undefined
+    >
+  )[Symbol.for("__cloudflare-context__")]?.env?.WORKER_SELF_REFERENCE;
+  return self ? self.fetch.bind(self) : fetch;
+}
+
 async function createCtx_(): Promise<McpCtx> {
   const env = parseEnv(mcpEnvSchema);
   // PLAN §7.6: never touch any cluster other than localnet/devnet.
@@ -70,7 +84,7 @@ async function createCtx_(): Promise<McpCtx> {
   const web = async <T>(path: string): Promise<T> => {
     let r: Response;
     try {
-      r = await fetch(new URL(path, webBase), { signal: AbortSignal.timeout(20_000) });
+      r = await selfFetch()(new URL(path, webBase), { signal: AbortSignal.timeout(20_000) });
     } catch {
       throw new Error(`The Stockbreak web app is not reachable at ${webBase}. Is it running?`);
     }

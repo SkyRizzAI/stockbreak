@@ -1,6 +1,6 @@
 /** Social feed (D033): posts, likes, comments, Following tab and anti-spam rules. */
 import { expect, test } from "@playwright/test";
-import { connectDevWallet, expectRun, firstIndexHref } from "./helpers";
+import { closeTxOverlay, connectDevWallet, expectRun, firstIndexHref } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -23,13 +23,15 @@ test("a wallet without on-chain activity cannot post", async ({ page }) => {
 });
 
 test("post, like, comment, anti-spam, delete", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await connectDevWallet(page);
   // Skin in the game: join an index first.
   await page.goto(await firstIndexHref(page, "MAG4"));
   await page.getByTestId("join-amount").fill("20");
   await page.getByTestId("join-submit").click();
   await expectRun(page, /Joined MAG4/);
+  await closeTxOverlay(page);
+  await page.getByRole("tab", { name: "Discussion" }).click();
 
   // Post from the index Discussion: attached to MAG4, one signature signs the session in.
   const body = `E2E thesis ${Date.now()}: megacaps + a pre-IPO sleeve.`;
@@ -48,7 +50,11 @@ test("post, like, comment, anti-spam, delete", async ({ page }) => {
     .not.toContain("Join or create an index first");
   const card = page.getByTestId("post-card").filter({ hasText: body });
   await expect(card).toBeVisible();
-  await expect(card).toContainText("MAG4");
+  // Inside MAG4's own discussion the index strip is hidden; the post is still attached.
+  const feed = (await (await page.request.get("/api/feed?tab=all&limit=50")).json()) as {
+    items: { body?: string; index?: { symbol: string } | null }[];
+  };
+  expect(feed.items.find((i) => i.body === body)?.index?.symbol).toBe("MAG4");
 
   // Anti-spam: same text again, and a second post inside the 20 s gap.
   await page.getByTestId("post-input").fill(body);
@@ -60,6 +66,8 @@ test("post, like, comment, anti-spam, delete", async ({ page }) => {
   await card.getByTestId("like-button").click();
   await expect(card.getByTestId("like-count")).toHaveText("1");
   await liked; // the like is persisted before reloading
+  // The Discussion tab is kept in the URL, so a reload lands back on it.
+  await expect(page).toHaveURL(/[?&]tab=discussion/);
   await page.reload();
   const again = page.getByTestId("post-card").filter({ hasText: body });
   await expect(again.getByTestId("like-button")).toHaveAttribute("aria-pressed", "true");
@@ -104,7 +112,7 @@ test("Following tab shows followed creators and seeded posts render", async ({ p
 });
 
 test("share an index to the feed as a card, in a chosen style", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await connectDevWallet(page);
   await page.goto(await firstIndexHref(page, "MEGA"));
   await page.getByTestId("join-amount").fill("15");
@@ -141,7 +149,7 @@ test("share an index to the feed as a card, in a chosen style", async ({ page })
 });
 
 test("home shows top creator cards", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await expect(page.getByTestId("creator-card").first()).toBeVisible();
   await expect(page.getByTestId("creator-card").first()).toContainText("AUM");
 });

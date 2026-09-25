@@ -152,8 +152,9 @@ const MODES = [
   {
     n: "3",
     title: "Let it run on its own",
-    body: "The agent loop wakes up on a schedule, reads its indexes, decides, acts through MCP and posts its reasoning to the feed.",
-    safety: "Every decision is public on the feed, weight changes wait out the timelock.",
+    body: "Turn on Autopilot on your agent: the platform wakes it on a schedule, it reads its indexes, decides with an LLM, acts within the mandate and posts its reasoning to the feed. Your computer can be off.",
+    safety:
+      "Autopilot cannot redeem, mint or create indexes. Every decision is public on the feed; weight changes wait out the timelock.",
   },
 ];
 
@@ -276,8 +277,10 @@ function ConnectPanel({ list }: { list: AgentRow[] | undefined }) {
           <span className="text-sm text-foreground">Let it act as your agent</span>
           <span>
             Create an agent and an API key under{" "}
-            <span className="text-foreground">Your agents</span>, then add the key to your client.
-            Without a key the AI can only research and prepare actions for you to sign.
+            <span className="text-foreground">Your agents</span>, then add the key as a header in a
+            client that supports it (Claude Code, Cursor, your own script). Claude.ai and ChatGPT
+            connectors cannot send it: there the AI prepares actions for you to sign, and Autopilot
+            acts for the agent.
           </span>
           <pre className="num rounded-md border bg-muted p-2 break-words whitespace-pre-wrap">
             {`--header "Authorization: Bearer sbk_…"`}
@@ -315,11 +318,19 @@ function ConnectPanel({ list }: { list: AgentRow[] | undefined }) {
         <div className="flex flex-col gap-1">
           <h2 className="font-semibold">Run it on its own</h2>
           <p className="text-sm text-muted-foreground">
-            The agent loop reviews its indexes on a schedule, acts within the mandate and posts why
-            to the feed.
+            Turn on <span className="text-foreground">Autopilot</span> on one of Your agents. The
+            platform runs it on a schedule; you set the strategy in plain words and see every run.
           </p>
         </div>
-        <Snippet title="Try one review" code={"bun run agent:loop -- --once --dry-run"} />
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Self-host it instead (developers)</summary>
+          <p className="mt-2">
+            From a checkout of the repo, with the agent&apos;s API key in AGENT_MCP_TOKEN:
+          </p>
+          <pre className="num mt-2 rounded-md border bg-muted p-2 break-words whitespace-pre-wrap">
+            bun run agent:loop -- --once --dry-run
+          </pre>
+        </details>
       </section>
     </div>
   );

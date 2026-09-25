@@ -1,0 +1,23 @@
+// Cloudflare Worker for the background loops (Cron Trigger, src/cf.ts), deployed by
+// Workers Builds on push to main (docs/DEPLOY.md "Opsi C", D050). No secrets here:
+// RPC_URL, WS_URL, ADMIN_KEYPAIR_JSON, KEEPER_KEYPAIR_JSON, ... are Worker secrets.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "stockbreak-worker",
+  "account_id": "89586fb20d63c1c6814d7ee5aa82a3d0",
+  "main": "src/cf.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "cf90210018f14c218bba4408d2445c55" }],
+  "triggers": { "crons": ["* * * * *"] },
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": {
+    "CLUSTER": "devnet",
+    "WEB_URL": "https://stockbreak.fun",
+    // Required by the env schema; @repo/db connects through HYPERDRIVE on Workers.
+    "DATABASE_URL": "postgresql://hyperdrive.invalid/uses-binding",
+    "PRICE_MODE": "live"
+  }
+}

@@ -36,7 +36,7 @@ export function MobileNav() {
   const path = usePathname();
   // Five slots on phones: Leaderboard and Agents stay reachable from Home.
   const items = [
-    { href: "/", label: "Home", icon: Home },
+    { href: "/home", label: "Home", icon: Home },
     ...NAV.filter((n) => n.href !== "/leaderboard" && n.href !== "/agents"),
     // Desktop reaches Portfolio from the wallet menu; phones keep it in the tab bar.
     { href: "/portfolio", label: "Portfolio", icon: LineChart },
@@ -47,7 +47,7 @@ export function MobileNav() {
       className="glass-bar fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       {items.map((n) => {
-        const active = n.href === "/" ? path === "/" : path.startsWith(n.href);
+        const active = path.startsWith(n.href);
         return (
           <Link
             key={n.href}

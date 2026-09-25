@@ -5,6 +5,7 @@
 import { closeDb } from "@repo/db";
 import { describeError } from "@repo/sdk";
 import { createWorkerCtx, redact, type WorkerCtx } from "./ctx";
+import { autopilotTick } from "./loops/autopilot";
 import { feesTick, followTick, keeperTick, snapshotTick } from "./loops/chain-jobs";
 import { gamificationTick } from "./loops/gamification";
 import { fullResync, indexerTick } from "./loops/indexer";
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
     { name: "fees", everySecs: Math.min(e.FEES_INTERVAL, 60), run: feesTick },
     { name: "follow", everySecs: e.FOLLOW_INTERVAL, run: followTick },
     { name: "gamification", everySecs: e.GAMIFICATION_INTERVAL, run: gamificationTick },
+    { name: "autopilot", everySecs: e.AUTOPILOT_INTERVAL, run: autopilotTick },
   ];
   const stop = async () => {
     if (stopping) return;

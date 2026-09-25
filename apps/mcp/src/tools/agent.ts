@@ -3,7 +3,7 @@
  * The agent signs with its own keypair; the vault program enforces the mandate.
  */
 import type { McpServer } from "@modelcontextprotocol/server";
-import { explorerTx } from "@repo/config";
+import { CLUSTER_PARAMS, explorerTx } from "@repo/config";
 import {
   createPost,
   getIndex,
@@ -15,19 +15,27 @@ import {
 import {
   applyUpdateIx,
   ata,
+  cancelUpdateIx,
   chainClock,
+  claimFeesIxs,
   createIndexFlow,
   describeError,
+  faucetIxs,
   fetchIndex,
+  fetchMaybeIndex,
   fetchTokenBalances,
   indexPda,
+  managersOf,
   nextIndexId,
+  parentOf,
+  pendingResult,
   proposeUpdateIx,
   rebalanceIxs,
   sendTx,
   TOKEN_PROGRAM,
   vault,
   zapIn,
+  zapOut,
 } from "@repo/sdk";
 import {
   type Address,
@@ -77,6 +85,14 @@ const tx = (c: McpCtx, sig: string) => ({
   signature: sig,
   explorer: explorerTx(c.env.CLUSTER, sig, c.env.RPC_URL),
 });
+
+const fmtShares = (raw: bigint) => (Number(raw) / 1e6).toFixed(4);
+
+/** Share balance (raw, 6 decimals) of `who`; 0n when the account is missing. */
+async function shareBalance(c: McpCtx, who: Address, shareMint: Address): Promise<bigint> {
+  const account = await ata(who, shareMint, TOKEN_PROGRAM);
+  return (await fetchTokenBalances(c, [account])).get(account) ?? 0n;
+}
 
 async function balances(c: McpCtx, who: Address) {
   const usdc = mintFor(c, "USDC");
@@ -433,7 +449,7 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
           );
         } catch (e) {
           throw new Error(
-            `Proposed an update to ${ref.symbol}, but applying it failed: ${describeError(e)}. The proposal is still pending; propose a corrected update (it replaces this one) or have the creator cancel it in Manage.`,
+            `Proposed an update to ${ref.symbol}, but applying it failed: ${describeError(e)}. The proposal is still pending; propose a corrected update (it replaces this one) or withdraw it with agent_cancel_update.`,
           );
         }
       }
@@ -490,6 +506,253 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
         index: ref ? { address: ref.pubkey, symbol: ref.symbol } : null,
         cardVariant: row.cardVariant,
         body,
+      });
+    }),
+  );
+  s.registerTool(
+    "agent_redeem",
+    {
+      title: "Agent: redeem shares",
+      description:
+        "Redeem the agent wallet's own shares of an index: pass shares or pct (1–100, default 100). With toUsdc (default) the redeemed assets are swapped back to USDC; otherwise they stay in the agent wallet as tokens.",
+      inputSchema: z.object({
+        index: z.string().describe("Index address or symbol"),
+        shares: z.number().positive().optional().describe("Number of shares to redeem"),
+        pct: z
+          .number()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Percent of the agent's shares to redeem (1–100)"),
+        toUsdc: z.boolean().default(true).describe("Swap redeemed assets back to USDC"),
+      }),
+    },
+    safe(async ({ index, shares, pct, toUsdc }) => {
+      const c = await ctx();
+      const a = agentOf(c);
+      if (shares !== undefined && pct !== undefined)
+        throw new Error("Pass either shares or pct, not both.");
+      const ref = await resolveIndex(c, index);
+      const st = await fetchIndex(c, ref.pubkey as Address);
+      const held = await shareBalance(c, a.address, st.shareMint);
+      if (held === 0n) throw new Error(`The agent holds no ${ref.symbol} shares to redeem.`);
+      const amount =
+        shares !== undefined
+          ? BigInt(Math.round(shares * 1e6))
+          : (held * BigInt(Math.round((pct ?? 100) * 100))) / 10_000n;
+      if (amount <= 0n) throw new Error("That amount rounds to zero shares.");
+      if (amount > held)
+        throw new Error(
+          `The agent holds ${fmtShares(held)} ${ref.symbol} shares; cannot redeem ${fmtShares(amount)}.`,
+        );
+      const usdcMint = mintFor(c, "USDC");
+      const before = (await balances(c, a.address)).usdc;
+      const row = await getIndex(c.db, ref.pubkey);
+      const r = await zapOut(c, a, ref.pubkey as Address, usdcMint, amount, {
+        toUsdc,
+        lookupTable: (row?.lookupTable as Address | null) ?? null,
+      });
+      const after = (await balances(c, a.address)).usdc;
+      const received = Math.max(0, after - before);
+      return ok(
+        toUsdc
+          ? `Redeemed ${fmtShares(amount)} ${ref.symbol} shares for ${usd(received)} USDC.`
+          : `Redeemed ${fmtShares(amount)} ${ref.symbol} shares; the assets are in the agent wallet.`,
+        {
+          redeemedShares: Number(amount) / 1e6,
+          remainingShares: Number(held - amount) / 1e6,
+          usdcReceived: toUsdc ? received : null,
+          ...tx(c, r.signatures.at(-1) as string),
+          signatures: r.signatures,
+        },
+      );
+    }),
+  );
+
+  s.registerTool(
+    "agent_claim_fees",
+    {
+      title: "Agent: claim fees",
+      description:
+        "Claim the fees owed to the agent on an index, paid as index shares: creator fees when the agent created it, and clone royalties when the agent created its parent index. Fees accrue first, so this also collects the latest management fee.",
+      inputSchema: z.object({
+        index: z.string().describe("Index address or symbol where the fees are owed"),
+      }),
+    },
+    safe(async ({ index }) => {
+      const c = await ctx();
+      const a = agentOf(c);
+      const ref = await resolveIndex(c, index);
+      const st = await fetchIndex(c, ref.pubkey as Address);
+      const parent = parentOf(st);
+      const parentSt = parent ? await fetchMaybeIndex(c, parent) : null;
+      const kinds: { kind: vault.FeeKind; label: string; owed: bigint; parent?: Address }[] = [];
+      if (st.creator === a.address)
+        kinds.push({
+          kind: vault.FeeKind.Creator,
+          label: "creator fees",
+          owed: st.owedCreatorShares,
+        });
+      if (parent && parentSt?.creator === a.address)
+        kinds.push({
+          kind: vault.FeeKind.Parent,
+          label: "clone royalties",
+          owed: st.owedParentShares,
+          parent,
+        });
+      if (!kinds.length)
+        throw new Error(
+          `The agent is not the creator of ${ref.symbol}${parent ? " or of its parent index" : ""}, so no fees are owed to it there.`,
+        );
+      // Owed shares only grow over time through the management fee (accrued on claim).
+      const due = kinds.filter((k) => k.owed > 0n || st.fees.mgmtFeeBps > 0);
+      if (!due.length)
+        return ok(`Nothing to claim on ${ref.symbol}: no fees are owed to the agent yet.`, {
+          claimedShares: 0,
+        });
+      const ixs = [];
+      for (const [i, k] of due.entries()) {
+        const [createAta, claim] = await claimFeesIxs(
+          a,
+          ref.pubkey as Address,
+          st,
+          k.kind,
+          k.parent,
+        );
+        if (i === 0 && createAta) ixs.push(createAta);
+        if (claim) ixs.push(claim);
+      }
+      const before = await shareBalance(c, a.address, st.shareMint);
+      const sig = await sendTx(c, a, ixs);
+      const claimed = (await shareBalance(c, a.address, st.shareMint)) - before;
+      const price = await c
+        .web<{ sharePriceLive: number }>(`/api/indexes/${ref.pubkey}`)
+        .then((d) => d.sharePriceLive)
+        .catch(() => null);
+      const value = price === null ? null : (Number(claimed) / 1e6) * price;
+      return ok(
+        claimed > 0n
+          ? `Claimed ${fmtShares(claimed)} ${ref.symbol} shares${value === null ? "" : ` (≈ ${usd(value)})`} of ${due.map((k) => k.label).join(" and ")}.`
+          : `Nothing was owed on ${ref.symbol}; the claim went through with 0 shares.`,
+        {
+          claimedShares: Number(claimed) / 1e6,
+          valueUsd: value,
+          kinds: due.map((k) => k.label),
+          ...tx(c, sig),
+        },
+      );
+    }),
+  );
+
+  s.registerTool(
+    "agent_apply_update",
+    {
+      title: "Agent: apply update",
+      description:
+        "Apply the pending update (weights, strategy or fees) of an index the agent created or manages once its timelock has passed. Before that it explains when the update can be applied.",
+      inputSchema: z.object({
+        index: z.string().describe("Index address or symbol"),
+      }),
+    },
+    safe(async ({ index }) => {
+      const c = await ctx();
+      const a = agentOf(c);
+      const ref = await resolveIndex(c, index);
+      const st = await fetchIndex(c, ref.pubkey as Address);
+      if (st.creator !== a.address && !managersOf(st).includes(a.address))
+        throw new Error(`The agent is not the creator or a manager of ${ref.symbol}.`);
+      if (st.pendingUpdate.__option !== "Some")
+        throw new Error(`${ref.symbol} has no pending update to apply.`);
+      const eta = Number(st.pendingUpdate.value.eta);
+      const now = Number(await chainClock(c));
+      if (eta > now) {
+        const mins = Math.ceil((eta - now) / 60);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `The update to ${ref.symbol} is still timelocked: it can be applied after ${new Date(eta * 1000).toISOString()} (about ${mins} min from now). Nothing was sent.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const next = pendingResult(st);
+      const sig = await sendTx(c, a, [await applyUpdateIx(a, ref.pubkey as Address, st)], {
+        computeUnitLimit: 600_000,
+      });
+      return ok(`Applied the pending update to ${ref.symbol}.`, {
+        targets:
+          next?.map((x) => ({
+            symbol: c.symbolOf(x.mint) ?? x.mint,
+            weight: bps(x.targetWeightBps),
+          })) ?? null,
+        ...tx(c, sig),
+      });
+    }),
+  );
+
+  s.registerTool(
+    "agent_cancel_update",
+    {
+      title: "Agent: cancel update",
+      description:
+        "Cancel the pending update of an index the agent created (creator only). The current weights, strategy and fees stay in place.",
+      inputSchema: z.object({
+        index: z.string().describe("Index address or symbol"),
+      }),
+    },
+    safe(async ({ index }) => {
+      const c = await ctx();
+      const a = agentOf(c);
+      const ref = await resolveIndex(c, index);
+      const st = await fetchIndex(c, ref.pubkey as Address);
+      if (st.creator !== a.address)
+        throw new Error(`Only the creator of ${ref.symbol} can cancel its pending update.`);
+      if (st.pendingUpdate.__option !== "Some")
+        throw new Error(`${ref.symbol} has no pending update to cancel.`);
+      const sig = await sendTx(c, a, [await cancelUpdateIx(a, ref.pubkey as Address)]);
+      return ok(`Cancelled the pending update to ${ref.symbol}.`, tx(c, sig));
+    }),
+  );
+
+  s.registerTool(
+    "agent_get_test_usdc",
+    {
+      title: "Agent: get test USDC",
+      description:
+        "Mint simulated test USDC to the agent wallet from the mock market faucet (no real value). The agent signs and pays the fee, so it needs a little SOL.",
+      inputSchema: z.object({
+        amount: z.number().positive().default(1_000).describe("USDC to mint (default 1,000)"),
+      }),
+    },
+    safe(async ({ amount }) => {
+      const c = await ctx();
+      const a = agentOf(c);
+      const max = Number(CLUSTER_PARAMS[c.env.CLUSTER].faucetMaxUsdc / 1_000_000n);
+      if (amount > max)
+        throw new Error(`At most ${usd(max)} test USDC per request on ${c.env.CLUSTER}.`);
+      const usdcMint = mintFor(c, "USDC");
+      const account = await ata(a.address, usdcMint, TOKEN_PROGRAM);
+      const [{ value: existing }, before] = await Promise.all([
+        c.rpc.getAccountInfo(account, { encoding: "base64", commitment: "confirmed" }).send(),
+        balances(c, a.address),
+      ]);
+      // Fee, plus rent for the USDC account when it does not exist yet.
+      if (before.sol < (existing ? 0.00001 : 0.0021))
+        throw new Error(
+          `The agent wallet has ${before.sol.toFixed(4)} SOL, not enough for the fee. Fund it with SOL first (Agents page → Fund SOL).`,
+        );
+      const sig = await sendTx(
+        c,
+        a,
+        await faucetIxs(a, usdcMint, BigInt(Math.round(amount * 1e6))),
+      );
+      const after = await balances(c, a.address);
+      return ok(`Minted ${usd(amount)} simulated USDC to the agent. Balance: ${usd(after.usdc)}.`, {
+        minted: amount,
+        balances: after,
+        ...tx(c, sig),
       });
     }),
   );

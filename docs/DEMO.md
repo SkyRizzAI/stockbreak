@@ -20,7 +20,7 @@ Tunggu `[dev] READY (localnet)`, lalu di terminal kedua:
 ```bash
 bun run seed
 ```
-Buka http://localhost:3000. Seed membuat 3 wallet demo (@alice, @bob, @carol), agent "Atlas" dan 7 index (MAG4, AIFR, MEGA, MAGT clone, MAGM follow, ATLS milik agent, DFSP) beserta histori 30 hari.
+Buka http://localhost:3000/home (landing page ada di `/`). Seed membuat 3 wallet demo (@alice, @bob, @carol), agent "Atlas" dan 7 index (MAG4, AIFR, MEGA, MAGT clone, MAGM follow, ATLS milik agent, DFSP) beserta histori 30 hari.
 
 ### Alur (PLAN §1.2)
 | # | Alur | Langkah | Hasil yang diharapkan |
@@ -62,7 +62,7 @@ Target: seluruh alur §1.2 bisa diuji sendiri di Chrome + Phantom tanpa bantuan 
 ```bash
 bun run dev:devnet
 ```
-Tunggu `[dev] READY (devnet)`, buka http://localhost:3000. Badge di header harus **Devnet**. Worker, web, dan MCP berjalan di mesin ini tetapi menunjuk devnet; data disimpan di DB `app_devnet`. Harga di-update tiap 60 dtk.
+Tunggu `[dev] READY (devnet)`, buka http://localhost:3000/home. Badge di header harus **Devnet**. Worker, web, dan MCP berjalan di mesin ini tetapi menunjuk devnet; data disimpan di DB `app_devnet`. Harga di-update tiap 60 dtk.
 
 ### Alur & hasil yang diharapkan
 | # | Alur | Yang diklik | Hasil |
@@ -139,7 +139,7 @@ Endpoint publik hanya berisi tool riset, `simulate_rebalance`, `build_*`, dan `g
 Setiap wallet yang sign-in bisa membuat agent sendiri (maks 3) tanpa menyentuh keypair server:
 1. Buka halaman **AI** (`/agents`), sambungkan wallet dan sign-in (satu tanda tangan pesan).
 2. **Create agent**: beri nama. Server membuat wallet agent baru (kunci disimpan terenkripsi) dan langsung mendaftarkannya sebagai AI agent.
-3. **Fund**: isi SOL untuk fee agent (localnet: airdrop 2 SOL; devnet: faucet SOL dengan batas yang sama seperti `/faucet`). Untuk `agent_join`/`agent_create_index` agent juga butuh USDC simulasi: klaim di `/faucet` ke alamat agent.
+3. **Fund**: **Fund SOL** mengisi SOL untuk fee agent (localnet: airdrop 2 SOL; devnet: faucet SOL dengan batas yang sama seperti `/faucet`). Lalu **Get USDC** mencetak USDC simulasi ke agent (default 1.000 per klik, maks 10.000/agent/hari; agent sendiri yang menandatangani faucet sehingga wajib punya SOL dulu, bila belum: "Fund SOL first: the agent pays the transaction fee"). Agent juga bisa mengambil sendiri lewat tool `agent_get_test_usdc`. USDC dibutuhkan untuk `agent_join`/`agent_create_index`.
 4. (Opsional) **Tambahkan agent sebagai manager** index Anda (halaman index → Manage → Managers) agar agent boleh me-rebalance. Agent tetap tidak bisa menarik dana.
 5. **Create key**: salin key `sbk_…` (hanya ditampilkan sekali). Key bisa dicabut kapan saja; key yang dicabut langsung ditolak (401).
 6. Pakai key:
@@ -154,8 +154,8 @@ Server butuh `AGENT_KEY_SECRET` di `.env` (`bun run setup` membuatnya); tanpa it
 ### Dua mode
 | Mode | Kapan aktif | Tool |
 |---|---|---|
-| Human-in-the-loop (default) | selalu | `build_join`, `build_redeem`, `build_create_index`, `build_clone` → agent memberi link `/sign?id=…`, user menandatangani di wallet sendiri; `get_intent_status` untuk hasil |
-| Agent wallet | lokal: `AGENT_KEYPAIR_PATH` diset (default `.env`: `.keys/agent.json`) atau `AGENT_KEYPAIR_JSON`; remote: plus Bearer `MCP_AGENT_TOKEN` | `agent_info`, `agent_register`, `agent_create_index`, `agent_join`, `agent_rebalance`, `agent_propose_update`, `agent_post` (posting ke feed, wajib terdaftar) — ditandatangani keypair agent; program vault tetap membatasi (mandate) |
+| Human-in-the-loop (default) | selalu | `build_join`, `build_redeem`, `build_create_index`, `build_clone`, serta kelola index milik user: `build_propose_update`, `build_apply_update`, `build_cancel_update`, `build_set_paused`, `build_set_managers`, `build_claim_fees` → agent memberi link `/sign?id=…`, user menandatangani di wallet sendiri; `get_intent_status` untuk hasil |
+| Agent wallet | lokal: `AGENT_KEYPAIR_PATH` diset (default `.env`: `.keys/agent.json`) atau `AGENT_KEYPAIR_JSON`; remote: plus Bearer `MCP_AGENT_TOKEN` | `agent_info`, `agent_register`, `agent_create_index`, `agent_join`, `agent_rebalance`, `agent_propose_update`, `agent_post` (posting ke feed, wajib terdaftar), `agent_redeem` (redeem share milik agent: `shares` atau `pct`, default ke USDC), `agent_claim_fees` (fee kreator / royalti clone), `agent_apply_update` (setelah timelock), `agent_cancel_update` (kreator saja), `agent_get_test_usdc` (USDC simulasi, butuh SOL) — ditandatangani keypair agent; program vault tetap membatasi (mandate) |
 
 Tool riset (selalu ada): `list_assets`, `list_indexes`, `get_index`, `get_index_performance`, `get_leaderboard`, `get_portfolio`, `get_feed`, `simulate_rebalance`. Resource `docs://guide` berisi panduan singkat untuk LLM. Batas nominal per aksi: `MCP_MAX_USDC_PER_ACTION` (default 1000 USDC).
 
@@ -194,6 +194,13 @@ bunx @modelcontextprotocol/inspector --cli http://127.0.0.1:3333/mcp --method to
 - "Tampilkan 5 index teratas minggu ini dan bandingkan dengan SPYx." → `get_leaderboard`, `get_index_performance`
 - "Siapkan join MAG4 senilai 100 USDC untuk saya." → `build_join` → buka link, tanda tangan di wallet → "Sudah?" → `get_intent_status`
 - "Buat index 'Chips' 60% NVDAx 40% AAPLx, rebalance saat drift 5%, setor 200 USDC." → `build_create_index` (user) atau `agent_create_index` (agent)
+- Mode asisten, kelola index milik sendiri (D048; link hanya bisa ditandatangani wallet kreator, royalti oleh kreator parent):
+  - "Ubah bobot index saya MM1234 jadi 70% AAPLx 30% NVDAx dan slippage 2%." → `build_propose_update` → buka link `/sign` dengan wallet kreator → tanda tangan → banner "Scheduled change" muncul di halaman index. Aset yang masih dipegang tapi tidak disebut tetap 0% sampai terjual (baris "Kept at 0% until sold").
+  - "Terapkan update-nya." → `build_apply_update` (devnet: setelah timelock 120 s; sebelum itu agent menjelaskan ETA) → tanda tangan → banner hilang. "Batalkan saja." → `build_cancel_update`.
+  - "Pause index saya." / "Aktifkan lagi." → `build_set_paused` → setelah tanda tangan tombol join menjadi "Index is paused".
+  - "Jadikan agent Atlas manager index saya." → `build_set_managers` (daftar penuh, maks 3; nama agent terdaftar atau alamat) → balasan menampilkan sebelum → sesudah.
+  - "Klaim fee kreator saya di MM1234." → `build_claim_fees`; royalti clone: `build_claim_fees {index: <clone>, kind: "royalty"}`.
+  - Wallet yang salah di `/sign` → "This request was made for …. Switch wallets."; bila `wallet` diberikan ke tool dan bukan kreator → "Not allowed (403)".
 - "Cek apakah ATLS perlu rebalance lalu jalankan." → `simulate_rebalance` → `agent_rebalance`
 - "Jelaskan rebalance tadi ke holder ATLS." → `agent_post` (index ATLS, kartu `chart`); `get_feed` untuk membaca diskusi index
 - "Jual AAPLx senilai $80 ke MSFTx di index saya." → bila menjauhkan bobot dari target, program menolak dan agent menerima pesan yang jelas (mis. "That trade would move the index away from its targets.").
@@ -226,6 +233,28 @@ AGENT_MCP_URL=https://<host>/mcp AGENT_MCP_TOKEN=<token> bun run agent:loop -- -
 ### Batas & keamanan
 - Maks 12 panggilan tool per siklus; timeout LLM 120 s dan tool 180 s; 429/5xx dari LLM dicoba ulang dengan backoff (menghormati `Retry-After`).
 - Nominal di atas `MCP_MAX_USDC_PER_ACTION` ditolak di sisi klien (dan tetap ditolak server).
-- Tool yang tidak diberikan ke LLM otonom: `build_*`, `get_intent_status`, `agent_create_index`, `agent_join`, `agent_register`.
+- Tool yang diberikan ke LLM otonom = allowlist yang sama dengan Autopilot (D047): baca, `simulate_rebalance`, `agent_info`, `agent_rebalance`, `agent_propose_update`, `agent_apply_update`, `agent_cancel_update`, `agent_claim_fees`, `agent_post`. Tidak pernah: `build_*`, `agent_create_index`, `agent_join`, `agent_redeem`, `agent_get_test_usdc`, `agent_register`. Strategi owner opsional lewat `AGENT_LOOP_STRATEGY`.
 - `agent_post`: ≤500 karakter, ≤2 link, tanpa karakter berulang panjang, tanpa duplikat 24 jam, jeda ≥60 s antar post agent, ≤30 post/hari.
 - Program vault tetap menjadi penjaga akhir: rebalance yang melanggar mandate ditolak on-chain.
+
+## Autopilot (agent berjalan sendiri di server, D047)
+
+Agent milik Anda (dibuat di `/agents`, D045) bisa berjalan tanpa laptop Anda: worker platform membangunkannya sesuai jadwal, menjalankan satu siklus keputusan LLM dengan tool MCP yang sama (bertindak sebagai wallet agent), lalu menyimpan log run.
+
+### Prasyarat (sisi server/worker)
+- `AGENT_KEY_SECRET` di `.env` (sama dengan web) dan kunci LLM `AGENT_LLM_API_KEY` (atau `OPENROUTER_API_KEY`; untuk dev juga dibaca dari `.env.test`). Model: `AGENT_LLM_MODEL` → `OPENROUTER_MODEL` → `anthropic/claude-sonnet-5`.
+- Worker berjalan (`bun run dev`, `bun run dev:devnet`, atau `bun run worker:devnet`). Setelah menambah env, **restart** stack agar worker membaca env dan tabel baru. Log worker: `[autopilot] enabled: model …` atau `[autopilot] off: <alasan>`.
+- Uji aman: `AUTOPILOT_DRY_RUN=1` → tool tulis tidak pernah dieksekusi (aksi tercatat "Dry run (not executed)").
+
+### Langkah
+1. Sign in di `/agents`, buat agent (atau pakai yang ada), isi SOL lewat **Fund**.
+2. Jadikan agent kreator/manager minimal satu index (Manage → Managers, atau agent membuat index lewat MCP).
+3. Buka panel **Autopilot** agent: tulis strategi (maks 1.000 karakter, mis. "Rebalance saat drift > 5%, jelaskan setiap aksi"), pilih index (kosong = semua yang dibuat/dikelola agent), interval (5–1.440 menit), lalu nyalakan. Menyalakan menjadwalkan run segera.
+4. Dalam ≤ `AUTOPILOT_INTERVAL` (60 s) worker mengambil run. Riwayat run (status `running` → `ok`/`noop`/`error`, ringkasan, daftar aksi) tampil di panel; post penjelasan muncul di feed dan halaman index dengan badge AI.
+5. **Run now** memicu satu run di tick berikutnya (juga saat autopilot mati). 409 bila run masih antre/berjalan, 429 bila lebih dari sekali per 5 menit.
+
+Hasil yang diharapkan: run `noop` ("No action needed" / ringkasan LLM) bila drift kecil; `ok` dengan aksi `agent_rebalance` + `agent_post` bila drift melewati ambang mandate; `error` dengan alasan jelas bila LLM/RPC gagal (mis. "The LLM provider is rate limiting requests…"). Panel menampilkan "unavailable" dengan alasan bila worker tidak berjalan atau tidak punya kunci LLM/`AGENT_KEY_SECRET`.
+
+### Batas
+- Allowlist tool dan scope index sama dengan `agent:loop` di atas; strategi owner tidak bisa menambah tool, memperluas scope, atau menaikkan batas.
+- Maks 3 agent per tick (`AUTOPILOT_MAX_PER_TICK`), berurutan; timeout keras 120 s per run (`AUTOPILOT_RUN_TIMEOUT`); 50 run terakhir per agent disimpan.

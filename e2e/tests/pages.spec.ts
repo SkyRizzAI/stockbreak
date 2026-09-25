@@ -15,7 +15,8 @@ test.beforeAll(async ({ request }) => {
 });
 
 const PAGES: [string, (c: Ctx) => string, RegExp][] = [
-  ["home", () => "/", /Markets/],
+  ["landing", () => "/", /index launchpad/],
+  ["home", () => "/home", /Markets/],
   ["explore", () => "/explore", /Explore/],
   ["index", (c) => `/i/${c.index}`, /Magnificent Four/],
   ["manage", (c) => `/i/${c.index}/manage`, /Connect the creator wallet/],
@@ -56,7 +57,7 @@ test("unknown sign request shows an error state", async ({ page }) => {
 });
 
 test("pages render cleanly with a remembered wallet (no hydration mismatch)", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await connectDevWallet(page);
   const errs = watchConsole(page);
   for (const url of ["/portfolio", `/i/${ctx.index}`, "/faucet", "/create", `/u/${ctx.creator}`]) {

@@ -42,7 +42,7 @@ describe("agent seed encryption", () => {
   });
 
   test("secret must be at least 32 chars", () => {
-    expect(agentKeySecret(undefined)).toBeNull();
+    expect(agentKeySecret("")).toBeNull();
     expect(agentKeySecret("short")).toBeNull();
     expect(agentKeySecret(SECRET)).toBe(SECRET);
   });

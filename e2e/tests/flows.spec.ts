@@ -15,7 +15,7 @@ test("onboarding: connect, faucet", async ({ page }) => {
 });
 
 test("join and redeem", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await connectDevWallet(page);
   await page.goto(await firstIndexHref(page, "MAG4"));
   await page.getByTestId("join-amount").fill("100");
@@ -64,7 +64,7 @@ test("create, then manage: update weights, add manager, pause", async ({ page })
 });
 
 test("clone with follow parent", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await connectDevWallet(page);
   const parent = await firstIndexHref(page, "MAG4");
   await page.goto(parent);
@@ -81,7 +81,7 @@ test("clone with follow parent", async ({ page }) => {
 });
 
 test("social: follow a creator", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   await connectDevWallet(page);
   const res = await page.request.get("/api/leaderboard?board=creators");
   expect(res.ok()).toBeTruthy();

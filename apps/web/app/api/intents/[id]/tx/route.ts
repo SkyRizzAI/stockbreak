@@ -8,6 +8,9 @@ import {
   type CreateParams,
   createStep,
   joinStep,
+  MANAGE_KINDS,
+  type ManageKind,
+  manageStep,
   redeemStep,
   type StepResult,
 } from "@/lib/server/steps";
@@ -65,6 +68,10 @@ export async function POST(req: Request, ctx: RouteContext<"/api/intents/[id]/tx
         );
         break;
       default:
+        if (MANAGE_KINDS.includes(it.kind)) {
+          r = await manageStep(account, it.kind as ManageKind, params);
+          break;
+        }
         return fail(400, `Unsupported intent kind ${it.kind}`);
     }
     await updateIntent(db(), id, { status: "in_progress", wallet: account });
