@@ -288,6 +288,8 @@ test("8. IPO → A, C, D migrate → timeline + ipo_survivor", async () => {
       })
       .toBe(false);
   await page.goto(`/i/${A}`);
+  // The timeline lives in a tab on the index page.
+  await page.getByRole("tab", { name: "Timeline" }).click();
   await expect(page.getByText(`IPO: ${PRE} converted to`)).toBeVisible({ timeout: 60_000 });
   const creator = (await detail(page, A)).creator;
   await expect

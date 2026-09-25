@@ -152,7 +152,7 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
           },
         ),
       (r) => `Joined ${d.symbol}: ${num(Number(r.shares) / 1e6)} shares`,
-      { recover },
+      { recover, steps: legs.length ? ["swap", "join"] : ["join"] },
     );
   const finishJoin = () =>
     run(
@@ -163,6 +163,7 @@ function JoinTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) {
           onProgress,
         }),
       (r) => `Joined ${d.symbol}: ${num(Number(r.shares) / 1e6)} shares`,
+      { steps: ["join"] },
     );
   const hint =
     raw !== null && raw > 0n && raw < minRaw
@@ -354,7 +355,7 @@ function RedeemTab({ d, onConnect }: { d: IndexDetail; onConnect: () => void }) 
           },
         ),
       undefined,
-      { recover },
+      { recover, steps: toUsdc ? ["redeem", "swap"] : ["redeem"] },
     );
   return (
     <div className="flex flex-col gap-4">

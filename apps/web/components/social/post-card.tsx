@@ -2,7 +2,6 @@
 /** A post with like, comments (one level) and delete for its author (D033). */
 import { useQueryClient } from "@tanstack/react-query";
 import { Heart, MessageCircle } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserLink } from "@/components/data/addr";
@@ -17,6 +16,7 @@ import type { CommentItem, PostItem } from "@/lib/types";
 import { useWallet } from "@/lib/wallet";
 import { COMMENT_MAX, errorText } from "./composer";
 import { IndexCard } from "./index-card";
+import { IndexStrip } from "./index-strip";
 
 function Stamp({ ts }: { ts: string }) {
   return (
@@ -161,7 +161,7 @@ function Comments({ post }: { post: PostItem }) {
   );
 }
 
-export function PostCard({ post }: { post: PostItem }) {
+export function PostCard({ post, hideIndex }: { post: PostItem; hideIndex?: boolean }) {
   const w = useWallet();
   const qc = useQueryClient();
   const [liked, setLiked] = useState(post.liked);
@@ -213,14 +213,6 @@ export function PostCard({ post }: { post: PostItem }) {
             />
             <Stamp ts={post.ts} />
           </div>
-          {post.index && !post.cardVariant ? (
-            <Link
-              href={`/i/${post.index.pubkey}`}
-              className="mono mt-0.5 w-fit text-xs text-muted-foreground hover:text-foreground hover:underline"
-            >
-              {post.index.symbol} · {post.index.name}
-            </Link>
-          ) : null}
         </div>
         {w.address === post.author.wallet ? (
           <DeleteButton
@@ -250,6 +242,8 @@ export function PostCard({ post }: { post: PostItem }) {
       </p>
       {post.index && post.cardVariant ? (
         <IndexCard index={post.index} variant={post.cardVariant} className="mt-3" />
+      ) : post.index && !hideIndex ? (
+        <IndexStrip index={post.index} />
       ) : null}
       <footer className="mt-3 flex items-center gap-1">
         <Button

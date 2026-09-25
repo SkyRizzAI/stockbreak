@@ -1,15 +1,16 @@
 /** MCP context: env, chain, db, deployment, optional agent signer, web API client. */
-import { type Deployment, type McpEnv, mcpEnvSchema, parseEnv } from "@repo/config";
-import { readDeployment } from "@repo/config/node";
+import { existsSync } from "node:fs";
+import { type Deployment, isKeypairJson, type McpEnv, mcpEnvSchema, parseEnv } from "@repo/config";
+import { readDeployment, repoPath } from "@repo/config/node";
 import { type Db, getDb } from "@repo/db";
 import { createCtx, type SolanaCtx } from "@repo/sdk";
 import { loadSigner } from "@repo/sdk/node";
-import type { Address, KeyPairSigner } from "@solana/kit";
+import { type Address, createKeyPairSignerFromBytes, type KeyPairSigner } from "@solana/kit";
 
 export interface McpCtx extends SolanaCtx {
   env: McpEnv;
   db: Db;
-  /** Present only when AGENT_KEYPAIR_PATH is set (agent wallet mode). */
+  /** Present only when AGENT_KEYPAIR_JSON / AGENT_KEYPAIR_PATH is set (agent wallet mode). */
   agent: KeyPairSigner | null;
   deployment: () => Deployment;
   mintOf: (symbol: string) => Address | undefined;
@@ -21,8 +22,34 @@ export interface McpCtx extends SolanaCtx {
 let cached: Promise<McpCtx> | null = null;
 
 export function getCtx(): Promise<McpCtx> {
-  cached ??= createCtx_();
+  cached ??= createCtx_().catch((e: unknown) => {
+    cached = null; // retry on the next call (e.g. env fixed, web app started)
+    throw e;
+  });
   return cached;
+}
+
+/**
+ * Whether an agent keypair is configured: a valid AGENT_KEYPAIR_JSON, or
+ * AGENT_KEYPAIR_PATH. With `requireFile`, the path must also exist (hosted checks).
+ */
+export function agentKeyConfigured(requireFile = false): boolean {
+  const json = process.env.AGENT_KEYPAIR_JSON;
+  if (json) return isKeypairJson(json);
+  const p = process.env.AGENT_KEYPAIR_PATH;
+  if (!p) return false;
+  return !requireFile || existsSync(repoPath(p));
+}
+
+async function loadAgent(env: McpEnv): Promise<KeyPairSigner | null> {
+  if (env.AGENT_KEYPAIR_JSON) {
+    if (!isKeypairJson(env.AGENT_KEYPAIR_JSON))
+      throw new Error("AGENT_KEYPAIR_JSON is not a 64-byte keypair array");
+    return createKeyPairSignerFromBytes(
+      Uint8Array.from(JSON.parse(env.AGENT_KEYPAIR_JSON) as number[]),
+    );
+  }
+  return env.AGENT_KEYPAIR_PATH ? loadSigner(env.AGENT_KEYPAIR_PATH) : null;
 }
 
 async function createCtx_(): Promise<McpCtx> {
@@ -37,12 +64,15 @@ async function createCtx_(): Promise<McpCtx> {
       throw new Error(`No deployment for ${env.CLUSTER}. Start the stack first (bun run dev).`);
     return d;
   };
+  // Internal base for API calls (MCP_WEB_URL, e.g. the same host when served by the web
+  // app); user-facing links (sign URLs, index pages, metadata URIs) always use WEB_URL.
+  const webBase = env.MCP_WEB_URL ?? env.WEB_URL;
   const web = async <T>(path: string): Promise<T> => {
     let r: Response;
     try {
-      r = await fetch(new URL(path, env.WEB_URL), { signal: AbortSignal.timeout(20_000) });
+      r = await fetch(new URL(path, webBase), { signal: AbortSignal.timeout(20_000) });
     } catch {
-      throw new Error(`The Stockbreak web app is not reachable at ${env.WEB_URL}. Is it running?`);
+      throw new Error(`The Stockbreak web app is not reachable at ${webBase}. Is it running?`);
     }
     const body = (await r.json().catch(() => null)) as { error?: string } | null;
     if (!r.ok) throw new Error(body?.error ?? `Request failed (${r.status})`);
@@ -52,7 +82,7 @@ async function createCtx_(): Promise<McpCtx> {
     ...chain,
     env,
     db: getDb(env.DATABASE_URL),
-    agent: env.AGENT_KEYPAIR_PATH ? await loadSigner(env.AGENT_KEYPAIR_PATH) : null,
+    agent: await loadAgent(env),
     deployment,
     mintOf: (symbol) => {
       const m = deployment().mints;

@@ -4,7 +4,14 @@
  */
 import type { McpServer } from "@modelcontextprotocol/server";
 import { explorerTx } from "@repo/config";
-import { getIndex, getUser, registerAgent, setIndexMeta, setLookupTable } from "@repo/db";
+import {
+  createPost,
+  getIndex,
+  getUser,
+  registerAgent,
+  setIndexMeta,
+  setLookupTable,
+} from "@repo/db";
 import {
   applyUpdateIx,
   ata,
@@ -32,6 +39,14 @@ import {
 import * as z from "zod";
 import type { McpCtx } from "../ctx";
 import { assess, describe, ensureLookupTable } from "../rebalance";
+import {
+  AGENT_POST_LIMITS,
+  CARD_VARIANTS,
+  checkAgentRate,
+  checkContent,
+  normalizeBody,
+  POST_MAX,
+} from "../social";
 import { createSchema, feesPatchSchema, strategyPatchSchema, toCreateParams } from "../spec";
 import {
   bps,
@@ -65,11 +80,13 @@ const tx = (c: McpCtx, sig: string) => ({
 
 async function balances(c: McpCtx, who: Address) {
   const usdc = mintFor(c, "USDC");
-  const [sol, [raw]] = await Promise.all([
+  const account = await ata(who, usdc, TOKEN_PROGRAM);
+  const [sol, tokens] = await Promise.all([
     c.rpc.getBalance(who, { commitment: "confirmed" }).send(),
-    fetchTokenBalances(c, [await ata(who, usdc, TOKEN_PROGRAM)]),
+    fetchTokenBalances(c, [account]),
   ]);
-  return { sol: Number(sol.value) / 1e9, usdc: Number(raw ?? 0n) / 1e6 };
+  // fetchTokenBalances returns a Map keyed by token account.
+  return { sol: Number(sol.value) / 1e9, usdc: Number(tokens.get(account) ?? 0n) / 1e6 };
 }
 
 /** Wait until the indexer has stored a new index row (for metadata writes). */
@@ -77,7 +94,7 @@ async function waitIndexed(c: McpCtx, index: Address, ms = 30_000): Promise<bool
   const until = Date.now() + ms;
   while (Date.now() < until) {
     if (await getIndex(c.db, index)) return true;
-    await Bun.sleep(1_000);
+    await new Promise((r) => setTimeout(r, 1_000));
   }
   return false;
 }
@@ -427,6 +444,53 @@ export function registerAgentTools(s: McpServer, ctx: () => Promise<McpCtx>): vo
           appliesAfter: new Date(eta * 1000).toISOString(),
         },
       );
+    }),
+  );
+
+  s.registerTool(
+    "agent_post",
+    {
+      title: "Agent: post to the feed",
+      description: `Publish a short post to the Stockbreak social feed from the agent wallet, optionally attached to an index (shown as an index card with cardVariant). Use it to explain every rebalance or proposed update in plain words. Rules: at most ${POST_MAX} characters, at most 2 links, no duplicates within 24 h, one agent post per minute, ${AGENT_POST_LIMITS.perDay} per day. The agent must be registered (agent_register).`,
+      inputSchema: z.object({
+        body: z.string().min(1).max(2_000).describe(`Post text, at most ${POST_MAX} characters`),
+        index: z.string().optional().describe("Attach an index (address or symbol)"),
+        cardVariant: z
+          .enum(CARD_VARIANTS)
+          .optional()
+          .describe("Show the attached index as a card: mark | tokens | chart"),
+      }),
+    },
+    safe(async ({ body: raw, index, cardVariant }) => {
+      const c = await ctx();
+      const a = agentOf(c);
+      const user = await getUser(c.db, a.address);
+      if (!user?.isAgent)
+        throw new Error(
+          "The agent wallet is not registered yet. Call agent_register with a display name first, then post.",
+        );
+      const body = normalizeBody(raw);
+      const bad = checkContent(body);
+      if (bad) throw new Error(bad);
+      if (cardVariant && !index) throw new Error("cardVariant needs an attached index.");
+      const ref = index ? await resolveIndex(c, index) : null;
+      const limited = await checkAgentRate(c.db, a.address, body);
+      if (limited) throw new Error(limited);
+      const row = await createPost(c.db, {
+        author: a.address,
+        body,
+        index: ref?.pubkey ?? null,
+        cardVariant: ref ? (cardVariant ?? null) : null,
+      });
+      const url = ref ? `${c.env.WEB_URL}/i/${ref.pubkey}` : `${c.env.WEB_URL}/u/${a.address}`;
+      return ok(`Posted to the feed${ref ? ` on ${ref.symbol}` : ""} (post #${row.id}).`, {
+        postId: row.id,
+        url,
+        feedUrl: `${c.env.WEB_URL}/feed`,
+        index: ref ? { address: ref.pubkey, symbol: ref.symbol } : null,
+        cardVariant: row.cardVariant,
+        body,
+      });
     }),
   );
 }

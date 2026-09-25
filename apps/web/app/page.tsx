@@ -177,12 +177,20 @@ export default function Home() {
           <Section
             title="Human vs AI"
             action={
-              <Link
-                href="/leaderboard"
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                Leaderboard
-              </Link>
+              <span className="flex items-center gap-3">
+                <Link
+                  href="/agents"
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Connect AI
+                </Link>
+                <Link
+                  href="/leaderboard"
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Leaderboard
+                </Link>
+              </span>
             }
           >
             {list.isLoading ? <Skeleton className="h-28" /> : <HumanVsAi rows={rows} />}

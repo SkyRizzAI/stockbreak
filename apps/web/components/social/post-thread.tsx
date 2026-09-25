@@ -13,7 +13,8 @@ export function PostThread({
   index,
   author,
 }: {
-  title: string;
+  /** Omit to render without a section heading (e.g. inside a tab). */
+  title?: string;
   index?: IndexRef;
   author?: string;
 }) {
@@ -21,36 +22,36 @@ export function PostThread({
   const q = usePosts({ index: index?.pubkey, author }, w.address);
   const posts = q.data?.pages.flatMap((pg) => pg.items) ?? [];
   const canPost = !!index || (author && author === w.address);
-  return (
-    <Section title={title}>
-      <div className="flex flex-col gap-3">
-        {canPost ? <Composer index={index ?? null} /> : null}
-        {q.isLoading ? (
-          <RowsSkeleton rows={2} className="[&>*]:h-24" />
-        ) : q.isError ? (
-          <p role="alert" className="text-sm text-down">
-            Posts are unavailable right now.
-          </p>
-        ) : posts.length === 0 ? (
-          <EmptyState title={index ? `No posts about ${index.symbol} yet.` : "No posts yet."} />
-        ) : (
-          <>
-            {posts.map((p) => (
-              <PostCard key={p.id} post={p} />
-            ))}
-            {q.hasNextPage ? (
-              <Button
-                variant="outline"
-                className="self-center"
-                disabled={q.isFetchingNextPage}
-                onClick={() => void q.fetchNextPage()}
-              >
-                {q.isFetchingNextPage ? "Loading…" : "Load more"}
-              </Button>
-            ) : null}
-          </>
-        )}
-      </div>
-    </Section>
+  const body = (
+    <div className="flex flex-col gap-3">
+      {canPost ? <Composer index={index ?? null} /> : null}
+      {q.isLoading ? (
+        <RowsSkeleton rows={2} className="[&>*]:h-24" />
+      ) : q.isError ? (
+        <p role="alert" className="text-sm text-down">
+          Posts are unavailable right now.
+        </p>
+      ) : posts.length === 0 ? (
+        <EmptyState title={index ? `No posts about ${index.symbol} yet.` : "No posts yet."} />
+      ) : (
+        <>
+          {posts.map((p) => (
+            // Inside an index's own thread, repeating that index under every post is noise.
+            <PostCard key={p.id} post={p} hideIndex={p.index?.pubkey === index?.pubkey} />
+          ))}
+          {q.hasNextPage ? (
+            <Button
+              variant="outline"
+              className="self-center"
+              disabled={q.isFetchingNextPage}
+              onClick={() => void q.fetchNextPage()}
+            >
+              {q.isFetchingNextPage ? "Loading…" : "Load more"}
+            </Button>
+          ) : null}
+        </>
+      )}
+    </div>
   );
+  return title ? <Section title={title}>{body}</Section> : body;
 }

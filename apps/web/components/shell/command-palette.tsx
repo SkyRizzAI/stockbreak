@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { TickerMono } from "@/components/data/glyph";
 import { Button } from "@/components/ui/button";
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -52,7 +53,7 @@ export function CommandPalette() {
       <Button
         variant="outline"
         size="lg"
-        className="hidden h-10 w-60 justify-between px-3 text-muted-foreground lg:flex"
+        className="hidden h-10 w-44 justify-between px-3 text-muted-foreground lg:flex"
         onClick={() => setOpen(true)}
       >
         <span className="inline-flex items-center gap-2">
@@ -76,59 +77,62 @@ export function CommandPalette() {
         title="Search"
         description="Search indexes, assets and creators"
       >
-        <CommandInput
-          placeholder="Search indexes, assets, creators…"
-          value={q}
-          onValueChange={setQ}
-        />
-        <CommandList>
-          <CommandEmpty>{q ? "No results." : "Type to search."}</CommandEmpty>
-          {res.data?.indexes.length ? (
-            <CommandGroup heading="Indexes">
-              {res.data.indexes.map((i) => (
-                <CommandItem
-                  key={i.pubkey}
-                  value={`idx ${i.name} ${i.symbol}`}
-                  onSelect={() => go(`/i/${i.pubkey}`)}
-                >
-                  <span className="mono text-xs text-muted-foreground">{i.symbol}</span>
-                  {i.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ) : null}
-          {res.data?.assets.length ? (
-            <CommandGroup heading="Assets">
-              {res.data.assets.map((a) => (
-                <CommandItem
-                  key={a.symbol}
-                  value={`asset ${a.symbol} ${a.name}`}
-                  onSelect={() => go(`/explore?q=${encodeURIComponent(a.symbol)}`)}
-                >
-                  <TickerMono symbol={a.symbol} />
-                  {a.name}
-                  <span className="ml-auto text-xs text-muted-foreground">Simulated</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ) : null}
-          {res.data?.creators.length ? (
-            <CommandGroup heading="Creators">
-              {res.data.creators.map((c) => (
-                <CommandItem
-                  key={c.wallet}
-                  value={`user ${c.handle ?? ""} ${c.wallet}`}
-                  onSelect={() => go(`/u/${c.wallet}`)}
-                >
-                  {c.handle ? `@${c.handle}` : short(c.wallet)}
-                  {c.isAgent ? (
-                    <span className="ml-auto text-xs text-muted-foreground">AI</span>
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ) : null}
-        </CommandList>
+        {/* The dialog no longer wraps its children in cmdk's root; the server does the filtering. */}
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search indexes, assets, creators…"
+            value={q}
+            onValueChange={setQ}
+          />
+          <CommandList>
+            <CommandEmpty>{q ? "No results." : "Type to search."}</CommandEmpty>
+            {res.data?.indexes.length ? (
+              <CommandGroup heading="Indexes">
+                {res.data.indexes.map((i) => (
+                  <CommandItem
+                    key={i.pubkey}
+                    value={`idx ${i.name} ${i.symbol}`}
+                    onSelect={() => go(`/i/${i.pubkey}`)}
+                  >
+                    <span className="mono text-xs text-muted-foreground">{i.symbol}</span>
+                    {i.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
+            {res.data?.assets.length ? (
+              <CommandGroup heading="Assets">
+                {res.data.assets.map((a) => (
+                  <CommandItem
+                    key={a.symbol}
+                    value={`asset ${a.symbol} ${a.name}`}
+                    onSelect={() => go(`/explore?q=${encodeURIComponent(a.symbol)}`)}
+                  >
+                    <TickerMono symbol={a.symbol} />
+                    {a.name}
+                    <span className="ml-auto text-xs text-muted-foreground">Simulated</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
+            {res.data?.creators.length ? (
+              <CommandGroup heading="Creators">
+                {res.data.creators.map((c) => (
+                  <CommandItem
+                    key={c.wallet}
+                    value={`user ${c.handle ?? ""} ${c.wallet}`}
+                    onSelect={() => go(`/u/${c.wallet}`)}
+                  >
+                    {c.handle ? `@${c.handle}` : short(c.wallet)}
+                    {c.isAgent ? (
+                      <span className="ml-auto text-xs text-muted-foreground">AI</span>
+                    ) : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
+          </CommandList>
+        </Command>
       </CommandDialog>
     </>
   );

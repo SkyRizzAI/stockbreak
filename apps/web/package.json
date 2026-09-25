@@ -13,6 +13,7 @@
     "@next/env": "16.3.6",
     "@repo/config": "workspace:*",
     "@repo/db": "workspace:*",
+    "@repo/mcp": "workspace:*",
     "@repo/sdk": "workspace:*",
     "@solana-program/system": "0.15.0",
     "@solana-program/token": "0.17.0",

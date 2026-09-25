@@ -1,6 +1,7 @@
 "use client";
 import { environmentManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { TxOverlay } from "@/components/shell/tx-overlay";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ApiError } from "@/lib/api";
@@ -34,6 +35,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <SessionGuard />
       <TooltipProvider>
         {children}
+        <TxOverlay />
         <Toaster position="bottom-right" />
       </TooltipProvider>
     </QueryClientProvider>

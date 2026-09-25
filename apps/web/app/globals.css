@@ -105,7 +105,7 @@
   --chart-3: #2a7a5c;
   --chart-4: #1c3329;
   --chart-5: #9bb3a7;
-  --glass-bar: rgb(6 20 14 / 0.72);
+  --glass-bar: rgb(6 20 14 / 0.62);
   --glass-panel: rgb(18 39 30 / 0.62);
   --glass-edge: rgb(255 255 255 / 0.09);
   --radius: 10px;
@@ -159,7 +159,7 @@
   --chart-3: #1e6b4e;
   --chart-4: #d3e2d9;
   --chart-5: #4a6457;
-  --glass-bar: rgb(244 248 245 / 0.78);
+  --glass-bar: rgb(244 248 245 / 0.62);
   --glass-panel: rgb(255 255 255 / 0.7);
   --glass-edge: rgb(11 28 21 / 0.08);
   --sidebar: #ffffff;
@@ -200,13 +200,14 @@
 
 /* Glass: two places only — the top bar and the Join/Redeem panel (refs "Dose limits"). */
 @utility glass-bar {
+  /* Near-solid fill; the blur only softens what scrolls underneath. */
   background: var(--glass-bar);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
 }
 @utility glass-panel {
   background: var(--glass-panel);
   border-color: var(--glass-edge);
-  backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
 }

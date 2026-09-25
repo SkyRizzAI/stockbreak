@@ -4,7 +4,7 @@
  */
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { expect, test } from "@playwright/test";
-import { connectDevWallet, expectRun, finishWizard } from "./helpers";
+import { closeTxOverlay, connectDevWallet, expectRun, finishWizard } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -176,6 +176,9 @@ test("EXT3: /sign resumes after an interruption without swapping twice", async (
   const swaps = mid.signatures.length;
   expect(swaps).toBeGreaterThan(0);
   await page.unroute("**/api/intents/*/tx");
+  // The overlay reports the partial result; dismiss it to act on the page.
+  await expect(page.getByTestId("tx-overlay")).toHaveAttribute("data-status", "partial");
+  await closeTxOverlay(page);
   await expect(page.getByTestId("intent-sign")).toHaveText("Continue signing");
   await page.getByTestId("intent-sign").click();
   await expect(page.getByText("Done. You can return to your agent.")).toBeVisible({

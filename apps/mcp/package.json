@@ -2,6 +2,10 @@
   "name": "@repo/mcp",
   "type": "module",
   "private": true,
+  "exports": {
+    "./public": "./src/public.ts",
+    "./server": "./src/server.ts"
+  },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.1.0",
     "@types/bun": "latest"

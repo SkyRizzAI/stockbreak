@@ -3,7 +3,7 @@
 import { humanizeError } from "@repo/sdk";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "cn";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { openConnect } from "@/components/shell/wallet-button";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,20 @@ export function Composer({
   const [text, setText] = useState("");
   const [variant, setVariant] = useState<CardVariant>("mark");
   const [busy, setBusy] = useState(false);
+  const [until, setUntil] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  // Tick once a second only while a cooldown is running.
+  useEffect(() => {
+    if (!until) return;
+    const t = setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() >= until) {
+        setUntil(null);
+        setErr(null);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [until]);
   const [err, setErr] = useState<string | null>(null);
 
   if (!w.address)
@@ -72,11 +86,16 @@ export function Composer({
         qc.invalidateQueries({ queryKey: ["posts"] }),
       ]);
     } catch (e) {
-      setErr(errorText(e));
+      const msg = errorText(e);
+      setErr(msg);
+      // Anti-spam gap ("Slow down — wait N s."): lock the button until it passes.
+      const wait = /wait (\d+)\s*s/i.exec(msg)?.[1];
+      if (wait) setUntil(Date.now() + Number(wait) * 1000);
     } finally {
       setBusy(false);
     }
   };
+  const waitLeft = until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0;
 
   return (
     <div className="flex flex-col gap-2 rounded-2xl border p-3">
@@ -121,11 +140,11 @@ export function Composer({
           </span>
           <Button
             size="sm"
-            disabled={busy || len === 0}
+            disabled={busy || len === 0 || waitLeft > 0}
             onClick={() => void submit()}
             data-testid="post-submit"
           >
-            {busy ? "Posting…" : "Post"}
+            {busy ? "Posting…" : waitLeft > 0 ? `Wait ${waitLeft}s` : "Post"}
           </Button>
         </div>
       </div>

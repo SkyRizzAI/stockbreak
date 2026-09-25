@@ -6,14 +6,15 @@ Juri hackathon dan klien Blink (dial.to, X) butuh **URL publik https**. Program 
 |---|---|---|
 | Web | Vercel (Hobby, gratis) | laptop user lewat Cloudflare quick tunnel |
 | DB | Neon Postgres (gratis) | Postgres docker lokal (atau Neon) |
-| Worker + MCP | laptop user → Neon + devnet | laptop user |
+| Worker | laptop user → Neon + devnet | laptop user |
+| MCP remote (`/api/mcp`) | ikut web Vercel | ikut web lewat tunnel |
 | Akun baru | GitHub (sudah), Vercel, Neon | tidak ada |
 | URL | tetap (`https://<project>.vercel.app`) | acak, berubah setiap tunnel dijalankan |
 | Bila laptop mati | web tetap hidup; harga/indexer/keeper berhenti | web mati |
 
 Worker (feeder harga, indexer, keeper, follow, gamifikasi) di kedua opsi tetap berjalan di laptop user. Selama penjurian (sampai 2 Okt), jalankan worker sesering mungkin. Tanpa worker, halaman tetap bisa dibuka dan transaksi tetap jalan. Namun harga oracle menjadi stale, sehingga zap join/redeem akan ditolak program ("oracle stale"). **Worker harus hidup saat juri mencoba.**
 
-MCP **tidak** dibuka ke publik. Server MCP memegang keypair agent yang bisa menandatangani, dan hanya menerima Host `localhost` (proteksi DNS rebinding). Juri melihat fitur agent lewat video atau clone repo (docs/DEMO.md "Connect an AI agent").
+MCP **remote** ikut web di `https://<web>/api/mcp` (bagian "Remote MCP" di bawah, D043): siapa pun bisa menghubungkan Claude.ai, ChatGPT, atau Claude Code. Endpoint publik hanya menyediakan tool baca, simulasi, dan `build_*` (user tetap menandatangani sendiri di `/sign`). Tool `agent_*` (keypair agent milik server) hanya muncul untuk request dengan `Authorization: Bearer <MCP_AGENT_TOKEN>`. Server MCP lokal (`127.0.0.1:3333`) tetap localhost-only seperti sebelumnya.
 
 ---
 
@@ -76,7 +77,7 @@ Perintah ini menjalankan worker + MCP lokal (3333), dengan cluster devnet, DB `D
 ```
 bun run check:public -- https://<nama-project>.vercel.app
 ```
-Hasil yang diharapkan `PASS 10/10`: https, `/api/config` (cluster devnet, deployment terbaca), `/api/indexes`, `/api/prices`, `/actions.json` (+CORS), Blink GET (ikon di domain publik), OPTIONS (CORS), OG image, halaman index (og:image di domain publik), dan home. Script juga mencetak link uji Blink `https://dial.to/?action=solana-action:…&cluster=devnet`.
+Hasil yang diharapkan `PASS 11/11`: https, `/api/config` (cluster devnet, deployment terbaca), `/api/indexes`, `/api/prices`, `/actions.json` (+CORS), Blink GET (ikon di domain publik), OPTIONS (CORS), OG image, halaman index (og:image di domain publik), home, dan `/api/mcp/health` (MCP remote, cluster devnet). Script juga mencetak link uji Blink `https://dial.to/?action=solana-action:…&cluster=devnet`.
 
 Lalu uji manual dengan Phantom (Settings → Developer Settings → Testnet mode → Solana Devnet), mengikuti docs/DEMO.md bagian B dengan URL Vercel.
 
@@ -94,12 +95,45 @@ Lalu uji manual dengan Phantom (Settings → Developer Settings → Testnet mode
 | `DATABASE_URL` | server, **secret** | Neon **pooled** | pool 3 koneksi/instance di Vercel (`DATABASE_POOL_MAX` untuk mengubah) |
 | `ADMIN_KEYPAIR_JSON` | server, **secret** | isi `.keys/admin.json` | opsional; tanpa ini faucet SOL mati dengan pesan jelas (USDC tetap jalan) |
 | `FAUCET_SOL_PER_REQUEST` / `FAUCET_SOL_DAILY_CAP` | server | `0.1` / `1` | batas faucet SOL (saldo admin devnet terbatas) |
+| `NEXT_PUBLIC_MCP_URL` | publik | `https://<project>.vercel.app/api/mcp` | URL MCP di halaman Agents; kosong = origin halaman + `/api/mcp` |
+| `MCP_WEB_URL` | server | `https://<project>.vercel.app` | opsional; basis panggilan API web dari tool MCP (default `WEB_URL`) |
+| `MCP_AGENT_TOKEN` | server, **secret** | acak ≥16 karakter | opsional (`vercel:env -- --with-agent`); membuka `agent_*` untuk pemegang token |
+| `AGENT_KEYPAIR_JSON` | server, **secret** | isi `.keys/agent.json` | opsional, hanya bersama `MCP_AGENT_TOKEN` |
+| `AGENT_KEY_SECRET` | server, **secret** | acak ≥32 karakter (dari `.env`, dibuat `bun run setup`) | opsional; mengaktifkan agent milik user + API key (D045). **Harus sama** dengan nilai yang mengenkripsi agent di DB yang sama; `vercel:env` menyalinnya otomatis |
 
-Tidak perlu di Vercel: `KEEPER_KEYPAIR_PATH`, `AGENT_KEYPAIR_PATH`, `PRICE_*`, `JUPITER_API_KEY`, `FINNHUB_API_KEY`, `MCP_*`, `*_INTERVAL` (semuanya milik worker/MCP lokal).
+Tidak perlu di Vercel: `KEEPER_KEYPAIR_PATH`, `AGENT_KEYPAIR_PATH`, `PRICE_*`, `JUPITER_API_KEY`, `FINNHUB_API_KEY`, `MCP_HTTP_PORT`, `MCP_PUBLIC`, `MCP_HOST`, `MCP_ALLOWED_HOSTS`, `*_INTERVAL` (semuanya milik worker/MCP standalone).
 
 **Risiko `ADMIN_KEYPAIR_JSON`** (D038): `admin` adalah upgrade authority program, market authority, dan pendana faucet devnet. Menaruhnya di Vercel berarti siapa pun yang punya akses ke project Vercel bisa meng-upgrade program devnet. Hanya pakai bila faucet SOL in-app benar-benar dibutuhkan. Alternatifnya, arahkan juri ke https://faucet.solana.com (pesan faucet sudah menyebutkannya). Bila dipakai, hapus variabelnya setelah penjurian. Aset yang terlibat hanya devnet, tanpa nilai nyata.
 
 **RPC publik**: pilihan terbaik untuk `NEXT_PUBLIC_RPC_URL` adalah key Helius **kedua** dengan *allowed domains* = domain Vercel (dashboard Helius → Access Control), atau endpoint publik devnet (rate-limited, bisa 429 bila ramai). Jangan memakai key yang sama dengan `RPC_URL`.
+
+---
+
+### Token operator (tool `agent_*` di remote MCP)
+Token ini adalah kata sandi acak milik operator. Server menyimpannya sebagai `MCP_AGENT_TOKEN`; klien AI mengirimnya sebagai `Authorization: Bearer <token>`. Tanpa token (atau tanpa kunci agent), remote MCP hanya membuka tool baca, simulasi, dan `build_*`.
+
+1. **Buat token** (disimpan ke `.env` sebagai `MCP_AGENT_TOKEN` dan `AGENT_MCP_TOKEN`, ditampilkan sekali):
+   ```
+   bun run agent:token             # token baru, atau pakai yang sudah ada
+   bun run agent:token -- --rotate # ganti token (klien lama tidak berlaku lagi)
+   ```
+2. **Pasang di server** yang melayani `/api/mcp`:
+   - Lokal: cukup restart `bun run dev` / `dev:devnet` (membaca `.env`).
+   - Vercel: `bun run vercel:env -- --web-url https://<project>.vercel.app --with-agent`. Perintah ini menulis `MCP_AGENT_TOKEN` dan `AGENT_KEYPAIR_JSON` ke `.env.vercel`. Tempel ke Vercel sebagai *Sensitive*, lalu redeploy. Atau salin token dari langkah 1 secara manual ke `MCP_AGENT_TOKEN` di Vercel.
+3. **Pakai di klien**:
+   - Claude Code: `claude mcp add --transport http stockbreak https://<web>/api/mcp --header "Authorization: Bearer <token>"`.
+   - Agent loop: `AGENT_MCP_URL=https://<web>/api/mcp bun run agent:loop` (token diambil dari `AGENT_MCP_TOKEN`).
+
+Connector Claude.ai/ChatGPT tidak mendukung header kustom. Di sana dipakai mode tanpa token (user menandatangani sendiri), dan itu memang aman untuk publik.
+
+### API key per user (agent milik user, D045)
+Berbeda dengan token operator (satu token, satu keypair agent milik server), setiap user yang sign-in bisa membuat **agent sendiri** dari halaman AI (`/agents`) dan membuat API key untuknya, seperti konsol API.
+
+- Server membuat wallet agent baru (seed ed25519) dan menyimpan seed-nya **terenkripsi** AES-256-GCM dengan kunci turunan `AGENT_KEY_SECRET`. API key berbentuk `sbk_…`; yang disimpan hanya hash SHA-256 + prefix, key ditampilkan sekali.
+- Klien mengirim `Authorization: Bearer sbk_…` ke `/api/mcp`; tool `agent_*` lalu bertindak sebagai wallet agent milik key itu. Key tidak valid/dicabut → HTTP 401 "Invalid or revoked API key". Rate limit 120 req/menit per key (di samping per IP).
+- Batas: 3 agent per user, 5 key aktif per agent. Batas program tetap berlaku (agent manager tidak bisa menarik dana user).
+- Konfigurasi: `AGENT_KEY_SECRET` (≥32 karakter). Lokal: `bun run setup` menambahkannya ke `.env` bila belum ada; restart `bun run dev`/`dev:devnet`. Vercel: `bun run vercel:env` menyalinnya dari `.env` ke `.env.vercel`. Semua server yang berbagi DB (lokal `dev:devnet` + Vercel ke Neon yang sama) **wajib** memakai nilai yang sama; mengganti/kehilangan secret membuat agent lama tidak bisa dibuka. Tanpa secret: API mengembalikan 503 "Agent creation is not configured on this server".
+- Hanya untuk devnet/localnet (aset simulasi). Untuk produksi, kunci agent sebaiknya dipegang wallet kustodian/MPC (Turnkey, Privy server wallets), bukan server aplikasi.
 
 ---
 
@@ -124,6 +158,55 @@ Dokumentasi resmi: quick tunnel hanya untuk pengujian. Batasnya 200 request in-f
 Catatan: laptop dan kedua terminal harus tetap menyala selama penjurian (sampai 2 Okt), dan sleep laptop mematikan demo. Karena URL berubah, opsi ini cocok untuk cadangan atau video. Untuk link submission, gunakan Opsi A.
 
 ---
+
+## Remote MCP
+
+Endpoint: `https://<web>/api/mcp` (Streamable HTTP, **stateless**, cocok untuk serverless). Health: `https://<web>/api/mcp/health` → `{ok, cluster, agentTools}`. Route ini menjalankan factory server yang sama dengan `apps/mcp` (`@repo/mcp/public`).
+
+| Tool | Tanpa token | Dengan `Authorization: Bearer <MCP_AGENT_TOKEN>` | Dengan `Authorization: Bearer sbk_…` (API key user) |
+|---|---|---|---|
+| Riset (`list_*`, `get_*`), `simulate_rebalance`, `build_*`, `get_intent_status`, resource `docs://guide` | ya | ya | ya (default wallet = agent key itu) |
+| `agent_*` | tidak | ya (keypair agent milik server), bila `AGENT_KEYPAIR_JSON` (atau file `AGENT_KEYPAIR_PATH`) tersedia | ya, sebagai wallet agent milik key itu (butuh `AGENT_KEY_SECRET`) |
+
+Perlindungan: token dibandingkan waktu-konstan (hash SHA-256), CORS `*` (header `Authorization`, `Content-Type`, `Mcp-Session-Id`, `Mcp-Protocol-Version` diizinkan, `Mcp-Session-Id` di-expose), rate limit per IP 60 req/menit (`MCP_RATE_LIMIT`, in-memory per instance) dengan jawaban 429 berbentuk JSON-RPC. Endpoint ini publik by design, jadi tidak ada validasi Host localhost.
+
+### Menghubungkan klien
+- **Claude.ai** (web/desktop/mobile): Settings → Connectors → *Add custom connector* → URL `https://<web>/api/mcp`. Tanpa OAuth; konektor mendapat tool publik (baca + `build_*`). Link `signUrl` dibuka user untuk menandatangani di Phantom.
+- **ChatGPT**: Settings → Apps & Connectors → Advanced → aktifkan *Developer mode* → *Create* connector → URL `https://<web>/api/mcp`, autentikasi *No authentication*.
+- **Claude Code**:
+  ```bash
+  claude mcp add --transport http stockbreak https://<web>/api/mcp
+  # dengan tool agent_* (token dari .env.vercel / pemilik deployment):
+  claude mcp add --transport http stockbreak https://<web>/api/mcp --header "Authorization: Bearer <token>"
+  ```
+- **Inspector**: `bunx @modelcontextprotocol/inspector --cli https://<web>/api/mcp --method tools/list`.
+
+### Tabel URL & environment per layanan
+| Variabel | Dipakai oleh | Isi | Default |
+|---|---|---|---|
+| `WEB_URL` | web (Blink, OG, metadata, cookie), MCP (link `signUrl`, `/i/<index>`, URI metadata), worker | URL publik web | `http://localhost:3000`; Vercel: `https://$VERCEL_PROJECT_PRODUCTION_URL` |
+| `MCP_WEB_URL` | MCP (panggilan API web internal `c.web`) | basis API web yang terjangkau dari server MCP | `WEB_URL` |
+| `NEXT_PUBLIC_MCP_URL` | web (halaman Agents, snippet setup) | URL MCP publik | origin halaman + `/api/mcp` |
+| `RPC_URL` / `WS_URL` | web (server), worker, MCP | RPC Solana server | localnet `127.0.0.1:8899/8900` |
+| `NEXT_PUBLIC_RPC_URL` / `NEXT_PUBLIC_WS_URL` | browser | RPC publik | localnet |
+| `DATABASE_URL` | web, worker, MCP | Postgres (Neon pooled untuk Vercel) | wajib |
+| `DEVNET_RPC_URL`, `DEVNET_DATABASE_URL`, `DEVNET_WEB_URL` | script devnet (`dev:devnet`, `worker:devnet`, `vercel:env`, `check:public`) | nilai devnet yang dipetakan ke tiga variabel di atas | kosong |
+| `MAINNET_READ_RPC_URL` | worker (baca harga saja) | RPC mainnet read-only | `api.mainnet-beta.solana.com` |
+| `MCP_HTTP_PORT` / `PORT` | MCP standalone | port HTTP | `3333` (lalu `PORT`) |
+| `MCP_PUBLIC`, `MCP_HOST`, `MCP_ALLOWED_HOSTS` | MCP standalone | mode publik, alamat bind, allow-list Host | mati, `127.0.0.1`, kosong |
+| `MCP_AGENT_TOKEN` | route `/api/mcp`, MCP standalone publik | secret Bearer untuk `agent_*` | kosong = `agent_*` tidak pernah publik |
+| `AGENT_KEYPAIR_JSON` / `AGENT_KEYPAIR_PATH` | MCP (semua mode), agent runner | keypair agent | `.keys/agent.json` (lokal) |
+| `MCP_RATE_LIMIT` | endpoint MCP publik | req/menit per IP | `60` |
+| `AGENT_MCP_URL` / `AGENT_MCP_TOKEN` | agent runner (`scripts/agent-loop.ts`) | URL MCP yang dipakai loop agent + token Bearer | `http://127.0.0.1:3333/mcp`, kosong |
+
+Agent runner ke deployment publik: `AGENT_MCP_URL=https://<web>/api/mcp AGENT_MCP_TOKEN=<MCP_AGENT_TOKEN>`.
+
+### Opsi hosting MCP
+1. **Route Vercel (disarankan)**: otomatis ikut deploy web. `bun run vercel:env -- --web-url https://<project>.vercel.app` sudah menulis `NEXT_PUBLIC_MCP_URL` dan `MCP_WEB_URL`. Tambah `--with-agent` untuk membuat `MCP_AGENT_TOKEN` acak baru dan `AGENT_KEYPAIR_JSON` (nilai hanya ditulis ke `.env.vercel`, tidak dicetak). Batas durasi fungsi: 60 s (`maxDuration`).
+2. **Host Bun mana pun (Fly, Railway, Render, VPS)**: `bun apps/mcp/src/http.ts` dengan `MCP_PUBLIC=1 MCP_HOST=0.0.0.0` (port dari `PORT`), `MCP_ALLOWED_HOSTS=mcp.domainanda.com`, plus `CLUSTER`, `RPC_URL`, `DATABASE_URL`, `WEB_URL` (link sign), `MCP_WEB_URL` (API web), opsional `MCP_AGENT_TOKEN` + `AGENT_KEYPAIR_JSON`. File `packages/config/deployments/<cluster>.json` harus ikut di image (jalankan dari clone repo). Endpoint `https://<host>/mcp`, health `/health`. Mode publik menerapkan gating token, CORS, dan rate limit yang sama.
+3. **Cloudflare Workers: belum layak hari ini** (tidak diimplementasikan). SDK MCP punya shim workerd dan `@solana/kit` berjalan di Workers, tetapi: (a) deployment dibaca dari filesystem (`readDeployment`, `node:fs`) dan keypair dari file; (b) pool postgres.js di-cache global per proses, sedangkan Workers melarang memakai objek I/O lintas request (butuh klien per request + Hyperdrive); (c) server standalone memakai `Bun.serve`. Butuh refactor `packages/config`/`packages/db`; alternatif murah: route Vercel atau host Bun.
+
+Verifikasi: `bun run check:public -- https://<web>` (cek #11 `/api/mcp/health`), lalu `claude mcp add …` dan minta "list the top indexes".
 
 ## Catatan operasional (A18)
 - **IPO di devnet:** `bun run ipo -- --asset <PRE> --cluster devnet` memperbarui `packages/config/deployments/devnet.json` di laptop. Web di Vercel membaca file versi commit, jadi **commit file itu lalu redeploy**. Kalau tidak, halaman publik masih menganggap token lama ter-listing. Worker lokal langsung memakai file baru.
@@ -150,7 +233,7 @@ Catatan: laptop dan kedua terminal harus tetap menyala selama penjurian (sampai 
 | `bun run verify:devnet` menulis ke Neon | `DEVNET_DATABASE_URL` di `.env` ikut terbaca. Untuk uji lokal jalankan `DEVNET_DATABASE_URL= bun run verify:devnet`. |
 
 ## Uji lokal tata letak Vercel
-`NEXT_OUTPUT_STANDALONE=1 VERCEL=1` + env produksi → `cd apps/web && bun run build` menghasilkan `.next/standalone` dengan file ter-trace yang sama seperti fungsi Vercel. Hasilnya: `packages/config/deployments/*.json` ikut, sedangkan `.env` dan `.keys/` tidak. `node apps/web/server.js` di folder itu lalu `check:public` → PASS 10/10 (lihat STATUS 2026-09-25).
+`NEXT_OUTPUT_STANDALONE=1 VERCEL=1` + env produksi → `cd apps/web && bun run build` menghasilkan `.next/standalone` dengan file ter-trace yang sama seperti fungsi Vercel. Hasilnya: `packages/config/deployments/*.json` ikut, sedangkan `.env` dan `.keys/` tidak. `node apps/web/server.js` di folder itu lalu `check:public` → PASS 11/11 (sejak D043 termasuk `/api/mcp/health`; lihat STATUS 2026-09-25).
 
 ## Sumber resmi
 - Vercel package managers (deteksi `bun.lock`): https://vercel.com/docs/package-managers
@@ -161,5 +244,9 @@ Catatan: laptop dan kedua terminal harus tetap menyala selama penjurian (sampai 
 - Next.js output & file tracing (`outputFileTracingRoot/Includes`): https://nextjs.org/docs/app/api-reference/config/next-config-js/output
 - Neon + Node/postgres.js (`ssl: 'require'`): https://neon.com/docs/guides/node
 - Neon connection pooling (`-pooler`, transaction mode, migrasi via direct): https://neon.com/docs/connect/connection-pooling
+- MCP Streamable HTTP transport: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
+- Claude custom connectors (remote MCP): https://support.anthropic.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp
+- ChatGPT developer mode & MCP connectors: https://platform.openai.com/docs/guides/developer-mode
+- Claude Code MCP (`claude mcp add --transport http`, `--header`): https://docs.claude.com/en/docs/claude-code/mcp
 - Cloudflare quick tunnel: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/
 - cloudflared download (`brew install cloudflared`): https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/

@@ -14,7 +14,7 @@ if (!process.env.WEB_URL && process.env.VERCEL_PROJECT_PRODUCTION_URL)
 
 const nextConfig: NextConfig = {
   agentRules: false,
-  transpilePackages: ["@repo/config", "@repo/sdk", "@repo/db"],
+  transpilePackages: ["@repo/config", "@repo/sdk", "@repo/db", "@repo/mcp"],
   // Self-hosting / local check of the traced file layout (docs/DEPLOY.md). Vercel ignores it.
   output: process.env.NEXT_OUTPUT_STANDALONE ? "standalone" : undefined,
   // Monorepo: trace server files from the repo root so functions (Vercel) ship

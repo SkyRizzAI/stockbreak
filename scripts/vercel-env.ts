@@ -1,5 +1,5 @@
 /**
- * bun run vercel:env -- --web-url https://<project>.vercel.app [--public-rpc <url>] [--with-admin-key]
+ * bun run vercel:env -- --web-url https://<project>.vercel.app [--public-rpc <url>] [--with-admin-key] [--with-agent]
  *
  * Writes `.env.vercel` (git-ignored, mode 600) with every variable the web app
  * needs on Vercel (docs/DEPLOY.md), ready to paste into Project → Settings →
@@ -7,8 +7,13 @@
  *
  * Sources: DEVNET_RPC_URL (server RPC, secret), VERCEL_DATABASE_URL or else
  * DEVNET_DATABASE_URL (Neon; the pooled "-pooler" URL is best for Vercel),
- * .keys/admin.json only with --with-admin-key (enables the devnet SOL faucet, D038).
+ * .keys/admin.json only with --with-admin-key (enables the devnet SOL faucet, D038),
+ * .keys/agent.json + a freshly generated MCP_AGENT_TOKEN only with --with-agent
+ * (agent_* tools on the remote MCP /api/mcp for bearer holders, D043), and
+ * AGENT_KEY_SECRET from .env when set (web-created agents + per-user API keys, D045;
+ * it must be the secret that encrypted the agents already in the shared database).
  */
+import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { wsFromRpc } from "@repo/sdk";
@@ -22,6 +27,7 @@ const serverRpc = process.env.DEVNET_RPC_URL || "https://api.devnet.solana.com";
 const publicRpc = argValue("public-rpc") || "https://api.devnet.solana.com";
 const dbUrl = process.env.VERCEL_DATABASE_URL || process.env.DEVNET_DATABASE_URL || "";
 const withAdmin = process.argv.includes("--with-admin-key");
+const withAgent = process.argv.includes("--with-agent");
 
 const problems: string[] = [];
 if (!webUrl.startsWith("https://"))
@@ -44,10 +50,16 @@ const vars: [string, string][] = [
   ["NEXT_PUBLIC_WS_URL", wsFromRpc(publicRpc)],
   ["NEXT_PUBLIC_APP_NAME", process.env.NEXT_PUBLIC_APP_NAME || "Stockbreak"],
   ["WEB_URL", webUrl],
+  // Remote MCP (/api/mcp): public URL shown on the Agents page; the MCP tools call
+  // the web API through MCP_WEB_URL (same deployment).
+  ["NEXT_PUBLIC_MCP_URL", `${webUrl}/api/mcp`],
+  ["MCP_WEB_URL", webUrl],
   ["DATABASE_URL", dbUrl],
   ["FAUCET_SOL_PER_REQUEST", "0.1"],
   ["FAUCET_SOL_DAILY_CAP", "1"],
 ];
+const agentKeySecret = process.env.AGENT_KEY_SECRET?.trim() ?? "";
+if (agentKeySecret.length >= 32) vars.push(["AGENT_KEY_SECRET", agentKeySecret]);
 if (withAdmin) {
   const p = path.join(ROOT, process.env.ADMIN_KEYPAIR_PATH || ".keys/admin.json");
   if (!existsSync(p)) {
@@ -55,6 +67,15 @@ if (withAdmin) {
     process.exit(1);
   }
   vars.push(["ADMIN_KEYPAIR_JSON", JSON.stringify(JSON.parse(readFileSync(p, "utf8")))]);
+}
+if (withAgent) {
+  const p = path.join(ROOT, process.env.AGENT_KEYPAIR_PATH || ".keys/agent.json");
+  if (!existsSync(p)) {
+    console.error(`[${S}] agent keypair not found`);
+    process.exit(1);
+  }
+  vars.push(["AGENT_KEYPAIR_JSON", JSON.stringify(JSON.parse(readFileSync(p, "utf8")))]);
+  vars.push(["MCP_AGENT_TOKEN", randomBytes(32).toString("base64url")]);
 }
 
 const out = path.join(ROOT, ".env.vercel");
@@ -71,6 +92,17 @@ if (publicRpc === serverRpc)
   log(
     S,
     "note: NEXT_PUBLIC_RPC_URL equals the server RPC; its API key is visible to every visitor",
+  );
+if (withAgent)
+  log(
+    S,
+    "generated a new MCP_AGENT_TOKEN (in .env.vercel only); clients send it as Authorization: Bearer",
+  );
+else log(S, "remote MCP without agent_* tools (pass --with-agent to enable them for a token)");
+if (agentKeySecret.length < 32)
+  log(
+    S,
+    "AGENT_KEY_SECRET not set in .env: creating agents / API keys will be off (bun run setup)",
   );
 if (!withAdmin)
   log(S, "SOL faucet will be off (no ADMIN_KEYPAIR_JSON); users get SOL at faucet.solana.com");

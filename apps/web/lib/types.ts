@@ -241,6 +241,8 @@ export interface IndexRef {
   pubkey: string;
   symbol: string;
   name: string;
+  /** Holdings' symbols by weight, for the feed's logo stack. */
+  assets?: string[];
 }
 
 /** Index card looks for sharing (D035). */

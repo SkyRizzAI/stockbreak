@@ -18,7 +18,7 @@ const stackUp = await fetch(`${WEB}/api/config`, { signal: AbortSignal.timeout(3
 if (!stackUp) console.warn(`[mcp.test] skipped: stack not running at ${WEB} (run via bun run e2e)`);
 const d = stackUp ? describe : describe.skip;
 
-const handler = createMcpHandler(createServer);
+const handler = createMcpHandler(() => createServer());
 const client = new Client({ name: "test", version: "1" }, { versionNegotiation: { mode: "auto" } });
 
 type Res = { content: { type: string; text: string }[]; isError?: boolean };
@@ -52,6 +52,7 @@ d("discovery", () => {
       "get_index_performance",
       "get_leaderboard",
       "get_portfolio",
+      "get_feed",
       "simulate_rebalance",
       "build_create_index",
       "build_join",
@@ -64,6 +65,7 @@ d("discovery", () => {
       "agent_join",
       "agent_rebalance",
       "agent_propose_update",
+      "agent_post",
     ])
       expect(names).toContain(n);
     for (const t of tools) expect(t.description?.length ?? 0).toBeGreaterThan(20);
@@ -147,6 +149,28 @@ d("agent wallet", () => {
     expect(info.isError).toBeFalsy();
     const reg = await call("agent_register", { name: "Atlas (demo agent)" });
     expect(text(reg)).toContain("as an AI agent");
+  });
+
+  test("agent_post explains a decision on an index, get_feed shows it", async () => {
+    const body = `Test note ${Date.now()}: MAG4 drift is within the band, no rebalance needed. Prices simulated.`;
+    const bad = await call("agent_post", { body: "x".repeat(600) });
+    expect(bad.isError).toBe(true);
+    expect(text(bad)).toContain("under 500");
+    const r = await call("agent_post", { body, index: "MAG4", cardVariant: "chart" });
+    // A rerun within a minute hits the agent rate limit, which is itself the rule under test.
+    if (r.isError) {
+      expect(text(r)).toContain("Slow down");
+      return;
+    }
+    const d = data<{ postId: number; url: string }>(r);
+    expect(d.postId).toBeGreaterThan(0);
+    expect(d.url).toContain("/i/");
+    const again = await call("agent_post", { body: `${body} again`, index: "MAG4" });
+    expect(again.isError).toBe(true);
+    expect(text(again)).toContain("Slow down");
+    const feed = await call("get_feed", { index: "MAG4", limit: 5 });
+    expect(feed.isError).toBeFalsy();
+    expect(text(feed)).toContain(body);
   });
 
   test("agent_create_index with deposit, then agent_join", async () => {

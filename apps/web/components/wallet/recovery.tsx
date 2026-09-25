@@ -51,6 +51,7 @@ export function useZapRecovery(
                 )
               : noWallet(),
           () => "Swapped the assets back to USDC",
+          { steps: ["swap"] },
         ),
     };
     if (index && e.recovery.includes("finish-join")) {
@@ -67,7 +68,7 @@ export function useZapRecovery(
                   })
                 : noWallet(),
             (r) => `Joined ${index.symbol}: ${num(Number(r.shares) / 1e6)} shares`,
-            { recover },
+            { recover, steps: ["join"] },
           ),
       });
     }

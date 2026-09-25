@@ -4,8 +4,10 @@ import { useState } from "react";
 import { UserLink } from "@/components/data/addr";
 import { IndexGlyph } from "@/components/data/glyph";
 import { Delta, Usd } from "@/components/data/num";
+import { Sparkline } from "@/components/data/sparkline";
 import { EmptyState, ErrorState, RowsSkeleton, SimulatedBadge } from "@/components/data/states";
 import { IndexTable } from "@/components/index/index-table";
+import { TokenWeights } from "@/components/social/index-strip";
 import {
   Table,
   TableBody,
@@ -64,14 +66,26 @@ function Podium({
                   <span className="mono text-xs text-muted-foreground">{r.symbol}</span>
                 </span>
               </span>
-              <span className="flex items-baseline gap-3">
-                <Delta value={ret} className="text-[40px] leading-none font-bold" />
-                {vs !== null ? (
-                  <span className="num text-[13px] text-muted-foreground">
-                    {vs >= 0 ? "+" : ""}
-                    {vs.toFixed(2)} pp vs SPYx
-                  </span>
-                ) : null}
+              <span className="flex items-end justify-between gap-3">
+                <span className="flex flex-col gap-1">
+                  <Delta value={ret} className="text-[40px] leading-none font-bold" />
+                  {vs !== null ? (
+                    <span className="num text-[13px] text-muted-foreground">
+                      {vs >= 0 ? "+" : ""}
+                      {vs.toFixed(2)} pp vs SPYx
+                    </span>
+                  ) : null}
+                </span>
+                <Sparkline data={r.spark} width={96} height={32} />
+              </span>
+              <TokenWeights assets={r.assets} />
+              <span className="mt-auto flex gap-4 border-t border-hairline pt-3 text-xs text-muted-foreground">
+                <span>
+                  AUM <Usd value={r.navUsd} compact className="text-foreground" />
+                </span>
+                <span>
+                  Holders <span className="num text-foreground">{r.holders}</span>
+                </span>
               </span>
             </Link>
           </li>

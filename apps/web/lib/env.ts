@@ -9,3 +9,8 @@ export const WALLET_CHAIN = (process.env.NEXT_PUBLIC_WALLET_CHAIN || CHAIN_ID[CL
   | "solana:localnet"
   | "solana:devnet";
 export const CLUSTER_LABEL = CLUSTER === "devnet" ? "Devnet" : "Localnet";
+/**
+ * Public MCP endpoint shown to users (NEXT_PUBLIC_MCP_URL). Empty → the Agents page
+ * uses this deployment's own route, `${origin}/api/mcp`.
+ */
+export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL || "";

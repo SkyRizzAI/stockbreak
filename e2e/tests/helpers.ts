@@ -67,11 +67,22 @@ export async function expectRun(page: Page, success: string | RegExp, timeout = 
   page.on("console", onConsole);
   try {
     const ok = page.getByText(typeof success === "string" ? done(success) : success).first();
-    const err = page.locator('[data-sonner-toast][data-type="error"]').first();
+    // Failures show in the transaction overlay (or, outside a run, as an error toast).
+    const err = page
+      .locator(
+        '[data-sonner-toast][data-type="error"], [data-testid="tx-overlay"][data-status="error"]',
+      )
+      .first();
     await expect(ok.or(err)).toBeVisible({ timeout });
     if (await err.isVisible())
-      throw new Error(`Error toast: ${(await err.textContent()) ?? ""}\n${logged.join("\n")}`);
+      throw new Error(`Run failed: ${(await err.textContent()) ?? ""}\n${logged.join("\n")}`);
   } finally {
     page.off("console", onConsole);
   }
+}
+
+/** Close the transaction overlay after a failed or partial run (it stays until dismissed). */
+export async function closeTxOverlay(page: Page) {
+  const close = page.getByTestId("tx-close");
+  if (await close.isVisible().catch(() => false)) await close.click();
 }

@@ -15,6 +15,31 @@ import type {
   SeriesPoint,
 } from "./types";
 
+interface FeedAuthor {
+  wallet: string;
+  handle: string | null;
+  isAgent: boolean;
+}
+type FeedItem =
+  | {
+      kind: "post";
+      id: number;
+      ts: string;
+      author: FeedAuthor;
+      index: { symbol: string } | null;
+      body: string;
+      likes: number;
+      comments: number;
+    }
+  | {
+      kind: "activity";
+      ts: string;
+      author: FeedAuthor | null;
+      index: { symbol: string } | null;
+      type: string;
+      summary: string;
+    };
+
 const RO = { readOnlyHint: true, openWorldHint: false } as const;
 
 export function summarize(i: IndexSummary) {
@@ -309,6 +334,53 @@ export function registerReadTools(s: McpServer, ctx: () => Promise<McpCtx>): voi
             feesOwedUsd: +x.owedCreatorUsd.toFixed(2),
           })),
         },
+      );
+    }),
+  );
+
+  s.registerTool(
+    "get_feed",
+    {
+      title: "Social feed",
+      description:
+        "Recent social posts (and, overall, notable on-chain activity such as new indexes and rebalances). Pass an index (address or symbol) to read the discussion on that index. Use it before posting so replies fit the conversation.",
+      inputSchema: z.object({
+        index: z.string().optional().describe("Index address or symbol; omit for the whole feed"),
+        limit: z.number().int().min(1).max(30).default(15),
+      }),
+      annotations: RO,
+    },
+    safe(async ({ index, limit }) => {
+      const c = await ctx();
+      const ref = index ? await resolveIndex(c, index) : null;
+      const page = ref
+        ? await c.web<{ items: FeedItem[] }>(`/api/posts?index=${ref.pubkey}`)
+        : await c.web<{ items: FeedItem[] }>(`/api/feed?tab=all&limit=${limit}`);
+      const items = page.items.slice(0, limit).map((x) =>
+        x.kind === "post"
+          ? {
+              kind: "post",
+              id: x.id,
+              ts: x.ts,
+              author: x.author.handle ?? x.author.wallet,
+              authorIsAgent: x.author.isAgent,
+              index: x.index?.symbol ?? null,
+              body: x.body,
+              likes: x.likes,
+              comments: x.comments,
+            }
+          : {
+              kind: "activity",
+              ts: x.ts,
+              author: x.author ? (x.author.handle ?? x.author.wallet) : null,
+              index: x.index?.symbol ?? null,
+              type: x.type,
+              summary: x.summary,
+            },
+      );
+      return ok(
+        `${items.length} recent ${ref ? `posts on ${ref.symbol}` : "feed items"} (newest first).`,
+        items,
       );
     }),
   );

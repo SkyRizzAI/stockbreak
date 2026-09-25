@@ -36,7 +36,7 @@ export default function PortfolioPage() {
   const { run, busy } = useRun();
   if (!w.address)
     return (
-      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10">
+      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10 md:px-8">
         <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Portfolio</h1>
         <p className="text-sm text-muted-foreground">
           Connect a wallet to see your positions and the fees you earn.

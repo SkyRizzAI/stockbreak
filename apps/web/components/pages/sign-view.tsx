@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { short, usd } from "@/lib/format";
 import { txUrl } from "@/lib/solana";
 import { signAndSendBase64 } from "@/lib/tx";
+import { txOverlay } from "@/lib/tx-overlay";
 import { useWallet } from "@/lib/wallet";
 
 interface Intent {
@@ -102,7 +103,7 @@ export function SignView() {
   const [error, setError] = useState<string | null>(null);
   if (!id)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <NotFoundState
           title="No request to sign"
           detail="This page opens a transaction request prepared by an AI agent. Ask the agent for its sign link."
@@ -113,13 +114,13 @@ export function SignView() {
     );
   if (q.isLoading)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <Skeleton className="h-64" />
       </div>
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <NotFoundState
           title="Request not found"
           detail="This sign link is invalid or was removed. Ask your agent to prepare the request again."
@@ -138,6 +139,30 @@ export function SignView() {
     setError(null);
     const all: string[] = [];
     let n = 0;
+    const creating = it.kind === "create_index" || it.kind === "clone";
+    const p = it.params;
+    // Server steps → overlay phases (same names as the in-app flows).
+    const keyOf = (label: string) => {
+      if (/lookup/i.test(label)) return "lookup-table";
+      if (/^create/i.test(label)) return "create";
+      if (/redeem/i.test(label)) return "redeem";
+      if (/swap/i.test(label)) return creating ? "deposit-swap" : "swap";
+      return creating ? "deposit-join" : "join";
+    };
+    txOverlay.start(
+      d.title,
+      it.kind === "join"
+        ? ["swap", "join"]
+        : it.kind === "redeem"
+          ? p.toUsdc === false
+            ? ["redeem"]
+            : ["redeem", "swap"]
+          : [
+              ...(((p.assets as unknown[]) ?? []).length >= 5 ? ["lookup-table"] : []),
+              "create",
+              ...(Number(p.depositUsdc ?? 0) > 0 ? ["deposit-swap", "deposit-join"] : []),
+            ],
+    );
     try {
       // The server tracks progress and hands out the next unfinished step, so a
       // retry or reload continues instead of repeating swaps.
@@ -147,11 +172,23 @@ export function SignView() {
           body: JSON.stringify({ account: w.address }),
         });
         setLabel(s.label);
+        const key = keyOf(s.label);
+        txOverlay.progress({
+          step: key,
+          done: n,
+          total: n + s.txs.length + (s.next === null ? 0 : 1),
+        });
         for (const tx of s.txs) {
           const sig = await signAndSendBase64(w.signer, tx);
           all.push(sig);
           setSigs([...all]);
           setDone(++n);
+          txOverlay.progress({
+            step: key,
+            done: n,
+            total: n + (s.txs.length - s.txs.indexOf(tx) - 1) + (s.next === null ? 0 : 1),
+            signature: sig,
+          });
           // Report each landed tx at once: a crash mid-step never loses progress.
           await api(`/api/intents/${id}/status`, {
             method: "POST",
@@ -160,9 +197,17 @@ export function SignView() {
         }
         if (s.next === null) break;
       }
+      txOverlay.success("Signed. Your agent can take it from here.", all.at(-1));
       await q.refetch();
     } catch (e) {
       const msg = humanizeError(e);
+      txOverlay.fail(
+        n > 0 ? "partial" : "error",
+        msg,
+        n > 0
+          ? `${n} transaction${n === 1 ? "" : "s"} already went through. Signing again continues from there.`
+          : null,
+      );
       setError(
         n > 0
           ? `${msg} ${n} transaction${n === 1 ? "" : "s"} already went through; signing again continues from there.`
@@ -178,7 +223,7 @@ export function SignView() {
     }
   };
   return (
-    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 py-8 md:px-8">
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted-foreground">Requested by {it.createdBy}</span>
         <div className="flex items-center gap-2">

@@ -135,6 +135,7 @@ const strategy = (s: Spec["strategy"]): vault.StrategyArgs => ({
 });
 
 async function ensureIndex(sp: Spec, created: Map<string, Address>): Promise<Address> {
+  log(S, `checking ${sp.symbol} (skips indexes that already exist)`);
   const existing = (await fetchAllIndexes(c)).find(
     (x) => x.data.creator === sp.who.address && x.data.symbol === sp.symbol,
   );
@@ -381,7 +382,10 @@ async function main(): Promise<void> {
   }
   const scale = light ? 0.05 : 1;
   const sol = c.cluster === "devnet" ? 0.25 : 20;
+  // Devnet RPCs are slow and rate-limited: say what is happening before each long step.
+  log(S, `${c.cluster}: funding 4 demo wallets with SOL`);
   for (const w of [alice, bob, carol, agent]) await fund(w, sol);
+  log(S, "minting demo USDC");
   const need = { alice: 260_000, bob: 110_000, carol: 150_000, agent: 60_000 };
   for (const [w, n] of [
     [alice, need.alice],

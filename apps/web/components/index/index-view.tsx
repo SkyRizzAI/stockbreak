@@ -9,6 +9,7 @@ import { IndexGlyph, TickerMono } from "@/components/data/glyph";
 import { Delta, Price, Usd } from "@/components/data/num";
 import { PrestocksPanel, PrestocksTag } from "@/components/data/prestocks";
 import {
+  EmptyState,
   ErrorState,
   KV,
   NotFoundState,
@@ -43,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, useActivity, useHolders, useIndex } from "@/lib/api";
 import { ago, bps, duration, num, pct, short } from "@/lib/format";
 import { txUrl } from "@/lib/solana";
@@ -181,11 +183,11 @@ function Activity({ pubkey }: { pubkey: string }) {
   const q = useActivity(pubkey);
   const rows = q.data ?? [];
   return (
-    <Section title="Activity">
+    <>
       {q.isLoading ? (
         <RowsSkeleton rows={4} />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No activity yet.</p>
+        <EmptyState title="No activity yet." />
       ) : (
         <ul className="divide-y rounded-2xl border text-sm">
           {rows.slice(0, 20).map((a) => (
@@ -211,32 +213,50 @@ function Activity({ pubkey }: { pubkey: string }) {
           ))}
         </ul>
       )}
-    </Section>
+    </>
   );
 }
 
 function Holders({ pubkey }: { pubkey: string }) {
   const q = useHolders(pubkey);
   const rows = q.data ?? [];
-  return (
-    <Section title={`Holders${rows.length ? ` (${rows.length})` : ""}`}>
-      {q.isLoading ? (
-        <RowsSkeleton rows={3} />
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No holders yet.</p>
-      ) : (
-        <ul className="divide-y rounded-2xl border text-sm">
-          {rows.slice(0, 10).map((h) => (
-            <li key={h.wallet} className="flex items-center justify-between px-3 py-2">
+  return q.isLoading ? (
+    <RowsSkeleton rows={3} />
+  ) : rows.length === 0 ? (
+    <EmptyState title="No holders yet." />
+  ) : (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Holder</TableHead>
+          <TableHead className="text-right">Shares</TableHead>
+          <TableHead className="w-2/5 text-right">Share of supply</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((h) => (
+          <TableRow key={h.wallet}>
+            <TableCell>
               <UserLink wallet={h.wallet} handle={h.handle} />
-              <span className="num text-muted-foreground">
-                {num(h.shares)} · {pct(h.pct, 1, false)}
+            </TableCell>
+            <TableCell className="num text-right">{num(h.shares)}</TableCell>
+            <TableCell>
+              <span className="flex items-center justify-end gap-3">
+                <span className="hidden h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-muted sm:block">
+                  <span
+                    className="block h-full rounded-full bg-[var(--mark-2)]"
+                    style={{ width: `${Math.min(100, h.pct * 100)}%` }}
+                  />
+                </span>
+                <span className="num w-14 text-right text-muted-foreground">
+                  {pct(h.pct, 1, false)}
+                </span>
               </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Section>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -254,19 +274,17 @@ function Timeline({ d }: { d: IndexDetail }) {
     })),
   ].sort((a, b) => b.ts.localeCompare(a.ts));
   return (
-    <Section title="Timeline">
-      <ol className="relative ml-2 border-l pl-4 text-sm">
-        {items.map((i) => (
-          <li key={`${i.ts}-${i.label}`} className="mb-3 last:mb-0">
-            <span className="absolute -left-[5px] mt-1.5 size-2.5 rounded-full border bg-background" />
-            <div>{i.label}</div>
-            <div className="text-xs text-muted-foreground">
-              {new Date(i.ts).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
-            </div>
-          </li>
-        ))}
-      </ol>
-    </Section>
+    <ol className="relative ml-2 border-l pl-4 text-sm">
+      {items.map((i) => (
+        <li key={`${i.ts}-${i.label}`} className="mb-3 last:mb-0">
+          <span className="absolute -left-[5px] mt-1.5 size-2.5 rounded-full border bg-background" />
+          <div>{i.label}</div>
+          <div className="text-xs text-muted-foreground">
+            {new Date(i.ts).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -442,6 +460,23 @@ export function IndexView({ pubkey }: { pubkey: string }) {
                   </span>,
                 ],
                 ["Last rebalance", ago(d.lastRebalanceTs * 1000)],
+                [
+                  "Managers",
+                  d.managers.length ? (
+                    <span key="mg" className="flex flex-wrap justify-end gap-x-2">
+                      {d.managers.map((m) => (
+                        <UserLink
+                          key={m.wallet}
+                          wallet={m.wallet}
+                          handle={m.handle}
+                          isAgent={m.isAgent}
+                        />
+                      ))}
+                    </span>
+                  ) : (
+                    "None"
+                  ),
+                ],
               ]}
             />
           </Section>
@@ -478,58 +513,54 @@ export function IndexView({ pubkey }: { pubkey: string }) {
           </Section>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-2">
-          <Section title="Managers">
-            {d.managers.length ? (
+        {/* Long, browse-on-demand lists live in tabs so the decision content above stays short. */}
+        <Tabs defaultValue="activity">
+          <TabsList variant="line" className="max-w-full justify-start overflow-x-auto">
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="holders">
+              Holders <span className="num text-muted-foreground">{d.holders}</span>
+            </TabsTrigger>
+            {d.children.length ? (
+              <TabsTrigger value="clones">
+                Clones <span className="num text-muted-foreground">{d.children.length}</span>
+              </TabsTrigger>
+            ) : null}
+            <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <TabsTrigger value="discussion">Discussion</TabsTrigger>
+          </TabsList>
+          <TabsContent value="activity" className="pt-4">
+            <Activity pubkey={d.pubkey} />
+          </TabsContent>
+          <TabsContent value="holders" className="pt-4">
+            <Holders pubkey={d.pubkey} />
+          </TabsContent>
+          {d.children.length ? (
+            <TabsContent value="clones" className="pt-4">
               <ul className="divide-y rounded-2xl border text-sm">
-                {d.managers.map((m) => (
-                  <li key={m.wallet} className="flex items-center justify-between px-3 py-2">
-                    <UserLink wallet={m.wallet} handle={m.handle} isAgent={m.isAgent} />
-                    <span className="text-xs text-muted-foreground">Can rebalance only</span>
+                {d.children.map((c) => (
+                  <li key={c.pubkey}>
+                    <Link
+                      href={`/i/${c.pubkey}`}
+                      className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/50"
+                    >
+                      <span>
+                        {c.name}{" "}
+                        <span className="mono text-xs text-muted-foreground">{c.symbol}</span>
+                      </span>
+                      <Tag>{c.followsParent ? "Follows" : "Clone"}</Tag>
+                    </Link>
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {d.strategy.allowKeeper
-                  ? "No managers. Only the creator and the keeper can rebalance."
-                  : "No managers. Only the creator can rebalance (Manage → Rebalance now)."}
-              </p>
-            )}
-          </Section>
-          <Holders pubkey={d.pubkey} />
-        </div>
-
-        {d.children.length ? (
-          <Section title="Clones & followers">
-            <ul className="divide-y rounded-2xl border text-sm">
-              {d.children.map((c) => (
-                <li key={c.pubkey}>
-                  <Link
-                    href={`/i/${c.pubkey}`}
-                    className="flex items-center justify-between px-3 py-2 hover:bg-muted/50"
-                  >
-                    <span>
-                      {c.name}{" "}
-                      <span className="mono text-xs text-muted-foreground">{c.symbol}</span>
-                    </span>
-                    <Tag>{c.followsParent ? "Follows" : "Clone"}</Tag>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        ) : null}
-
-        <PostThread
-          title="Discussion"
-          index={{ pubkey: d.pubkey, symbol: d.symbol, name: d.name }}
-        />
-
-        <div className="grid gap-8 md:grid-cols-2">
-          <Activity pubkey={d.pubkey} />
-          <Timeline d={d} />
-        </div>
+            </TabsContent>
+          ) : null}
+          <TabsContent value="timeline" className="pt-4">
+            <Timeline d={d} />
+          </TabsContent>
+          <TabsContent value="discussion" className="pt-4">
+            <PostThread index={{ pubkey: d.pubkey, symbol: d.symbol, name: d.name }} />
+          </TabsContent>
+        </Tabs>
       </div>
 
       <aside className="hidden lg:block">

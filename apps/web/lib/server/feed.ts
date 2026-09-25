@@ -38,8 +38,13 @@ const FOLLOWING_TYPES = [
 
 async function refs() {
   const map = new Map<string, IndexRef>();
-  for (const r of await allIndexes(db()))
-    map.set(r.pubkey, { pubkey: r.pubkey, symbol: r.symbol, name: r.name });
+  for (const r of await allIndexes(db())) {
+    const assets = ((r.assets as { symbol: string; targetWeightBps: number }[]) ?? [])
+      .filter((a) => a.targetWeightBps > 0)
+      .sort((a, b) => b.targetWeightBps - a.targetWeightBps)
+      .map((a) => a.symbol);
+    map.set(r.pubkey, { pubkey: r.pubkey, symbol: r.symbol, name: r.name, assets });
+  }
   return map;
 }
 

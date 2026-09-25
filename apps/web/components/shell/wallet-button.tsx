@@ -43,6 +43,7 @@ import { hasDevWallet } from "@/lib/dev-wallet";
 import { CLUSTER, CLUSTER_LABEL } from "@/lib/env";
 import { num, short } from "@/lib/format";
 import { chain } from "@/lib/solana";
+import { txOverlay } from "@/lib/tx-overlay";
 import { walletClient } from "@/lib/wallet";
 
 export function useBalances(address: string | null) {
@@ -77,11 +78,13 @@ export async function fundDevWallet(
   usdcMint: Address,
   signer: Parameters<typeof faucetIxs>[0],
   usdcAmount = 10_000,
+  onStep?: (step: "sol" | "usdc", done: number) => void,
 ): Promise<boolean> {
   const c = chain();
   const lamports = async () =>
     (await c.rpc.getBalance(address, { commitment: "confirmed" }).send()).value;
   if ((await lamports()) > 0n) return false;
+  onStep?.("sol", 0);
   await api("/api/faucet/sol", { method: "POST", body: JSON.stringify({ wallet: address }) });
   // The faucet confirms at "confirmed"; the default ("finalized") lags ~13 s on devnet.
   let arrived = false;
@@ -90,6 +93,7 @@ export async function fundDevWallet(
     if (!arrived) await new Promise((r) => setTimeout(r, 500));
   }
   if (!arrived) throw new Error("SOL from the faucet did not arrive. Try the faucet page.");
+  onStep?.("usdc", 1);
   const usdcAta = await ata(address, usdcMint, TOKEN_PROGRAM);
   if (((await fetchTokenBalances(c, [usdcAta])).get(usdcAta) ?? 0n) === 0n)
     await sendTx(c, signer, await faucetIxs(signer, usdcMint, BigInt(usdcAmount) * 1_000_000n));
@@ -145,7 +149,22 @@ function ConnectDialog({
     if (!account || !usdc || !signer) return;
     const id = toast.loading("Checking your dev wallet…");
     try {
-      const funded = await fundDevWallet(account.address as Address, usdc as Address, signer);
+      let started = false;
+      const funded = await fundDevWallet(
+        account.address as Address,
+        usdc as Address,
+        signer,
+        10_000,
+        (step, done) => {
+          // Only a wallet that actually needs funding gets the overlay.
+          if (!started) {
+            started = true;
+            txOverlay.start("Setting up your dev wallet", ["sol", "usdc"], { auto: true });
+          }
+          txOverlay.progress({ step, done, total: 2 });
+        },
+      );
+      if (funded) txOverlay.success("Your dev wallet has SOL for fees and 10,000 test USDC.");
       toast.success(
         funded
           ? "Dev wallet funded with SOL and simulated USDC"
@@ -155,6 +174,7 @@ function ConnectDialog({
       await qc.invalidateQueries();
     } catch (e) {
       console.error(e);
+      txOverlay.close();
       toast.error(`Could not fund the dev wallet: ${reason(e)}`, {
         id,
         duration: 12_000,

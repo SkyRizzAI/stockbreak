@@ -2,7 +2,15 @@
  * bun run setup — idempotent first-time setup (PLAN §7.9).
  * Never touches the global Solana config; keys live in .keys/ (gitignored).
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { log, run, tryOutput } from "./lib/proc";
 import { KEYS_DIR, ROOT, SOLANA_BIN, SOLANA_CLI_CONFIG, SOLANA_VERSION } from "./lib/toolchain";
@@ -112,6 +120,7 @@ function ensureEnv(): void {
   const envPath = path.join(ROOT, ".env");
   if (existsSync(envPath)) {
     log(S, ".env exists (kept)");
+    ensureAgentKeySecret(envPath);
     return;
   }
   let text = readFileSync(path.join(ROOT, ".env.example"), "utf8");
@@ -133,6 +142,28 @@ function ensureEnv(): void {
   }
   writeFileSync(envPath, text, { mode: 0o600 });
   log(S, "created .env");
+  ensureAgentKeySecret(envPath);
+}
+
+/**
+ * AGENT_KEY_SECRET encrypts web-created agent wallets (D045). Generated once; never
+ * rotated here (rotating it makes existing agents unrecoverable). Value never printed.
+ */
+function ensureAgentKeySecret(envPath: string): void {
+  const text = readFileSync(envPath, "utf8");
+  const m = /^AGENT_KEY_SECRET=(.*)$/m.exec(text);
+  const current = (m?.[1] ?? "").replace(/\s+#.*$/, "").trim();
+  if (current.length >= 32) return;
+  const secret = randomBytes(32).toString("base64url");
+  if (m)
+    writeFileSync(envPath, text.replace(/^AGENT_KEY_SECRET=.*$/m, `AGENT_KEY_SECRET=${secret}`));
+  else
+    appendFileSync(
+      envPath,
+      `${text.endsWith("\n") ? "" : "\n"}AGENT_KEY_SECRET=${secret}   # encrypts web-created agent wallets (D045); keep it stable\n`,
+    );
+  chmodSync(envPath, 0o600);
+  log(S, "generated AGENT_KEY_SECRET in .env (value not printed)");
 }
 
 async function ensureDatabase(): Promise<void> {

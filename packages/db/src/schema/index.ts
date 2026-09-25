@@ -256,3 +256,38 @@ export const postComments = pgTable(
     index("post_comments_author_idx").on(t.author, t.createdAt),
   ],
 );
+
+/**
+ * Server-custodied agent wallets created from the web (D045, custody model A):
+ * the ed25519 seed is stored AES-256-GCM encrypted (AGENT_KEY_SECRET). Devnet/localnet only.
+ */
+export const agentWallets = pgTable(
+  "agent_wallets",
+  {
+    wallet: text("wallet").primaryKey(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    secretEnc: text("secret_enc").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("agent_wallets_owner_idx").on(t.owner)],
+);
+
+/** API keys that authenticate remote MCP requests as one agent wallet (D045). Hash only. */
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: serial("id").primaryKey(),
+    agentWallet: text("agent_wallet")
+      .notNull()
+      .references(() => agentWallets.wallet),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    prefix: text("prefix").notNull(),
+    keyHash: text("key_hash").notNull().unique(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    lastUsedAt: ts("last_used_at"),
+    revokedAt: ts("revoked_at"),
+  },
+  (t) => [index("api_keys_agent_idx").on(t.agentWallet), index("api_keys_owner_idx").on(t.owner)],
+);

@@ -12,6 +12,7 @@ import {
   vault,
 } from "@repo/sdk";
 import { type Address, isAddress } from "@solana/kit";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
@@ -508,6 +509,14 @@ function Managers({ d }: { d: IndexDetail }) {
   const w = useWallet();
   const { run, busy } = useRun();
   const [addr, setAddr] = useState("");
+  const agents = useQuery({
+    queryKey: ["agents"],
+    queryFn: () =>
+      api<{ wallet: string; handle: string | null; agentName: string | null }[]>("/api/agents"),
+  });
+  const suggested = (agents.data ?? []).filter(
+    (a) => a.wallet !== d.creator && !d.managers.some((m) => m.wallet === a.wallet),
+  );
   const error =
     addr === ""
       ? null
@@ -572,6 +581,22 @@ function Managers({ d }: { d: IndexDetail }) {
             </Button>
           </div>
           {error ? <span className="text-xs text-warn">{error}</span> : null}
+          {suggested.length ? (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+              <span>Registered AI agents:</span>
+              {suggested.map((a) => (
+                <Button
+                  key={a.wallet}
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setAddr(a.wallet)}
+                  data-testid="manager-agent-suggest"
+                >
+                  {a.agentName ?? (a.handle ? `@${a.handle}` : short(a.wallet))}
+                </Button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -586,20 +611,20 @@ export function ManageView({ pubkey }: { pubkey: string }) {
   const [thesis, setThesis] = useState<string | null>(null);
   if (q.isLoading)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <RowsSkeleton rows={6} />
       </div>
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[640px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
         <ErrorState message="Index not found." onRetry={() => void q.refetch()} />
       </div>
     );
   const d = q.data;
   if (!w.address)
     return (
-      <div className="mx-auto flex max-w-[640px] flex-col items-start gap-3 px-4 py-10">
+      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10 md:px-8">
         <p className="text-sm text-muted-foreground">
           Connect the creator wallet to manage {d.name}.
         </p>
@@ -608,7 +633,7 @@ export function ManageView({ pubkey }: { pubkey: string }) {
     );
   if (w.address !== d.creator)
     return (
-      <div className="mx-auto flex max-w-[640px] flex-col items-start gap-3 px-4 py-10">
+      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10 md:px-8">
         <p className="text-sm text-muted-foreground">Only the creator can manage this index.</p>
         <Link href={`/i/${d.pubkey}`} className="text-sm underline">
           Back to {d.name}
@@ -618,7 +643,7 @@ export function ManageView({ pubkey }: { pubkey: string }) {
   const owed = Number(d.owed.creator) / 1e6;
   const signer = w.signer as NonNullable<typeof w.signer>;
   return (
-    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-8 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
       <div className="flex flex-col gap-1">
         <Link
           href={`/i/${d.pubkey}`}
@@ -706,7 +731,15 @@ export function ManageView({ pubkey }: { pubkey: string }) {
         />
       </Section>
 
-      <Section title="Managers">
+      <Section title="Managers & AI agents">
+        <p className="text-sm text-muted-foreground">
+          A manager (a person or an{" "}
+          <Link href="/agents" className="underline underline-offset-2">
+            AI agent
+          </Link>
+          ) can rebalance within your mandate and propose weight changes, which wait out the
+          timelock. The vault program never lets a manager withdraw funds. Remove it here any time.
+        </p>
         <Managers d={d} />
       </Section>
 

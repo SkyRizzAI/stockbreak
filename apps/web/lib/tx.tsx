@@ -16,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { chain, txUrl } from "./solana";
+import { txOverlay } from "./tx-overlay";
 
 export interface Progress {
   step: string;
@@ -56,15 +57,14 @@ export interface ToastAction {
 }
 
 export interface RunOptions {
+  /** Planned phases in order (progress step keys), shown up front in the overlay. */
+  steps?: string[];
   /**
    * Recovery offered when a multi-transaction flow stopped halfway: the first
    * action is the main one, the optional second is shown as the alternative.
    */
   recover?: (e: PartialZapError) => ToastAction[];
 }
-
-/** Errors stay long enough to read; partial results stay until dismissed. */
-const ERROR_MS = 12_000;
 
 export function useRun() {
   const qc = useQueryClient();
@@ -79,37 +79,34 @@ export function useRun() {
     ): Promise<T | null> => {
       setBusy(true);
       setProgress(null);
-      const id = toast.loading(label);
+      txOverlay.start(label, opts.steps);
       try {
         const r = await fn((p) => {
           setProgress(p);
-          toast.loading(`${label} · ${stepLabel(p.step)} ${p.done}/${p.total}`, {
-            id,
-            description: p.signature ? <Explorer sig={p.signature} /> : undefined,
-          });
+          txOverlay.progress(p);
         });
         const sig =
           (r as { signatures?: string[]; signature?: string } | null)?.signatures?.at(-1) ??
           (r as { signature?: string } | null)?.signature;
-        toast.success(success ? success(r) : `${label} — done`, {
-          id,
-          description: sig ? <Explorer sig={sig} /> : undefined,
-        });
+        const done = success ? success(r) : `${label} — done`;
+        txOverlay.success(done, sig);
+        toast.success(done, { description: sig ? <Explorer sig={sig} /> : undefined });
         return r;
       } catch (e) {
         console.error(e);
         if (e instanceof PartialZapError) {
-          const [main, alt] = opts.recover?.(e) ?? [];
+          const actions = opts.recover?.(e) ?? [];
+          const [main, alt] = actions;
+          const detail = `${e.completed.length} of ${e.totalSteps} steps completed. ${e.reason}`;
+          txOverlay.fail("partial", e.message, detail, actions);
+          // Also keep the recovery reachable after the overlay is closed.
           const last = e.completed.at(-1);
           toast.warning(e.message, {
-            id,
             duration: Number.POSITIVE_INFINITY,
             closeButton: true,
             description: (
               <span className="flex flex-col gap-1">
-                <span>
-                  {e.completed.length} of {e.totalSteps} steps completed. {e.reason}
-                </span>
+                <span>{detail}</span>
                 {last ? <Explorer sig={last} /> : null}
               </span>
             ),
@@ -117,12 +114,7 @@ export function useRun() {
             cancel: alt,
           });
         } else {
-          toast.error(humanizeError(e), {
-            id,
-            description: label,
-            duration: ERROR_MS,
-            closeButton: true,
-          });
+          txOverlay.fail("error", humanizeError(e), label);
         }
         return null;
       } finally {

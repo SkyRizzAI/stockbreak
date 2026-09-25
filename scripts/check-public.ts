@@ -2,7 +2,8 @@
  * bun run check:public -- <https://your-app.example> [--cluster devnet] [--mcp <url>]
  *
  * Smoke test for a public deployment (docs/DEPLOY.md): config, indexes, prices,
- * actions.json, a Blink GET (+CORS preflight), the OG image and the index page.
+ * actions.json, a Blink GET (+CORS preflight), the OG image, the index page and the
+ * remote MCP endpoint health (/api/mcp/health).
  * Read-only: sends no transactions. Exit code 0 only when every check passes.
  */
 import { argValue } from "./lib/chain";
@@ -156,6 +157,16 @@ await step("home page", async () => {
   const r = await get("/");
   if (!r.ok) return fail("home page", `HTTP ${r.status}`);
   pass("home page", "HTTP 200");
+});
+
+await step("/api/mcp/health", async () => {
+  const r = await get("/api/mcp/health");
+  if (!r.ok) return fail("/api/mcp/health", `HTTP ${r.status}`);
+  const j = (await r.json()) as { ok?: boolean; cluster?: string; agentTools?: boolean };
+  if (!j.ok) return fail("/api/mcp/health", "ok=false");
+  if (j.cluster !== expectCluster)
+    return fail("/api/mcp/health", `cluster=${j.cluster}, expected ${expectCluster}`);
+  pass("/api/mcp/health", `remote MCP at ${BASE}/api/mcp, agentTools=${!!j.agentTools}`);
 });
 
 if (mcpUrl) {

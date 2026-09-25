@@ -492,68 +492,95 @@ function Wizard() {
     // Never create twice: once the index exists only the remaining steps can be retried.
     if (created || !w.signer || !cfg.data) return;
     const signer = w.signer;
-    const res = await run("Create index", async (onProgress) => {
-      const track = tracker(onProgress, {
-        create: picks.length >= 5 ? 3 : 1,
-        manager: manager ? 1 : 0,
-        deposit: depositNum > 0 ? 2 : 0,
-      });
-      const c = chain();
-      const indexId = await nextIndexId(c, signer.address);
-      const indexAddress = await indexPda(signer.address, indexId);
-      const r = await createIndexFlow(
-        c,
-        {
-          creator: signer,
-          indexId,
-          name: name.trim(),
-          symbol,
-          uri: `${window.location.origin}/api/meta/${indexAddress}`,
-          assets: toBps(picks).map((a) => ({ mint: a.mint as Address, weightBps: a.weightBps })),
-          fees: {
-            mgmtFeeBps: Math.round(mgmt * 100),
-            entryFeeBps: Math.round(entry * 100),
-            exitFeeBps: Math.round(exit * 100),
+    const res = await run(
+      "Create index",
+      async (onProgress) => {
+        const track = tracker(onProgress, {
+          create: picks.length >= 5 ? 3 : 1,
+          manager: manager ? 1 : 0,
+          deposit: depositNum > 0 ? 2 : 0,
+        });
+        const c = chain();
+        const indexId = await nextIndexId(c, signer.address);
+        const indexAddress = await indexPda(signer.address, indexId);
+        const r = await createIndexFlow(
+          c,
+          {
+            creator: signer,
+            indexId,
+            name: name.trim(),
+            symbol,
+            uri: `${window.location.origin}/api/meta/${indexAddress}`,
+            assets: toBps(picks).map((a) => ({ mint: a.mint as Address, weightBps: a.weightBps })),
+            fees: {
+              mgmtFeeBps: Math.round(mgmt * 100),
+              entryFeeBps: Math.round(entry * 100),
+              exitFeeBps: Math.round(exit * 100),
+            },
+            strategy: {
+              mode:
+                mode === "Manual"
+                  ? vault.StrategyMode.Manual
+                  : mode === "Periodic"
+                    ? vault.StrategyMode.Periodic
+                    : vault.StrategyMode.Threshold,
+              driftThresholdBps: Math.round(drift * 100),
+              periodSecs: mode === "Periodic" ? Math.round(periodDays * 86400) : 0,
+              maxSlippageBps: Math.round(slippage * 100),
+              cooldownSecs: Math.round(cooldownMin * 60),
+              allowKeeper: mode === "Manual" ? false : keeper,
+            },
+            parent: (cloneOf as Address | null) ?? null,
+            followsParent: following,
           },
-          strategy: {
-            mode:
-              mode === "Manual"
-                ? vault.StrategyMode.Manual
-                : mode === "Periodic"
-                  ? vault.StrategyMode.Periodic
-                  : vault.StrategyMode.Threshold,
-            driftThresholdBps: Math.round(drift * 100),
-            periodSecs: mode === "Periodic" ? Math.round(periodDays * 86400) : 0,
-            maxSlippageBps: Math.round(slippage * 100),
-            cooldownSecs: Math.round(cooldownMin * 60),
-            allowKeeper: mode === "Manual" ? false : keeper,
-          },
-          parent: (cloneOf as Address | null) ?? null,
-          followsParent: following,
-        },
-        (p) => track("create", p),
-      );
-      const made = { index: r.index, lookupTable: r.lookupTable };
-      setCreated(made);
-      await saveExtras(made);
-      await finishStages(made, "manager", track);
-      return r;
-    });
+          (p) => track("create", p),
+        );
+        const made = { index: r.index, lookupTable: r.lookupTable };
+        setCreated(made);
+        await saveExtras(made);
+        await finishStages(made, "manager", track);
+        return r;
+      },
+      undefined,
+      {
+        // The whole journey up front, so every wallet prompt has context.
+        steps: [
+          ...(picks.length >= 5 ? ["lookup-table"] : []),
+          "create",
+          ...(manager ? ["manager"] : []),
+          ...(depositNum > 0 ? ["deposit-swap", "deposit-join"] : []),
+        ],
+      },
+    );
     if (res) router.push(`/i/${res.index}`);
   };
 
   const retry = async () => {
     if (!created || !failed || failed === "create") return;
     const from = failed;
-    const res = await run(from === "manager" ? "Finish setup" : "Deposit", async (onProgress) => {
-      const track = tracker(onProgress, {
-        create: 0,
-        manager: from === "manager" && manager ? 1 : 0,
-        deposit: depositNum > 0 ? 2 : 0,
-      });
-      await finishStages(created, from, track);
-      return { ok: true };
-    });
+    const res = await run(
+      from === "manager" ? "Finish setup" : "Deposit",
+      async (onProgress) => {
+        const track = tracker(onProgress, {
+          create: 0,
+          manager: from === "manager" && manager ? 1 : 0,
+          deposit: depositNum > 0 ? 2 : 0,
+        });
+        await finishStages(created, from, track);
+        return { ok: true };
+      },
+      undefined,
+      {
+        steps: [
+          ...(from === "manager" && manager ? ["manager"] : []),
+          ...(heldDeposit
+            ? ["deposit-join"]
+            : depositNum > 0
+              ? ["deposit-swap", "deposit-join"]
+              : []),
+        ],
+      },
+    );
     if (res) {
       setFailed(null);
       router.push(`/i/${created.index}`);
@@ -569,7 +596,7 @@ function Wizard() {
 
   if (cloneOf && parent.isError)
     return (
-      <div className="mx-auto flex max-w-[640px] flex-col gap-3 px-4 py-10 md:px-8">
+      <div className="mx-auto flex max-w-[1280px] flex-col gap-3 px-4 py-10 md:px-8">
         <div
           role="alert"
           className="flex flex-col items-start gap-2 rounded-2xl border px-4 py-8 md:px-8"

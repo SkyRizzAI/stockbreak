@@ -36,6 +36,7 @@
         "@next/env": "16.3.6",
         "@repo/config": "workspace:*",
         "@repo/db": "workspace:*",
+        "@repo/mcp": "workspace:*",
         "@repo/sdk": "workspace:*",
         "@solana-program/system": "0.15.0",
         "@solana-program/token": "0.17.0",
@@ -134,6 +135,7 @@
     "scripts": {
       "name": "@repo/scripts",
       "dependencies": {
+        "@modelcontextprotocol/client": "2.1.0",
         "@repo/config": "workspace:*",
         "@repo/db": "workspace:*",
         "@repo/sdk": "workspace:*",

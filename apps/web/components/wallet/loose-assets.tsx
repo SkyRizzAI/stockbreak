@@ -56,6 +56,7 @@ export function LooseAssets({ address }: { address: string }) {
             )
           : Promise.reject(new Error("Wallet not connected")),
       () => "Swapped the assets to USDC",
+      { steps: ["swap"] },
     );
   return (
     <Section

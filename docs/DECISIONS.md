@@ -239,3 +239,62 @@ Format: tanggal · konteks · opsi · pilihan · alasan.
 - `TickerMono` menampilkan logo bila tersedia, dan kembali ke tile ticker mono bila offline atau gambar gagal dimuat. Semua tempat yang memakainya otomatis ikut: alokasi, wizard, Manage, command palette.
 - `AssetStack` (logo bertumpuk, urut bobot) menggantikan index mark di baris tabel index. Index mark tetap dipakai di header halaman index dan di kartu.
 - Pengecualian §8 "monokrom": logo penerbit adalah informasi (identitas aset), bukan dekorasi. Tetap tanpa gradien/ilustrasi.
+
+## D042 — 2026-09-25 — Overlay progres transaksi
+- Permintaan user: toast "Step 3 of 5" terlalu minim untuk alur multi-tanda-tangan. Semua alur transaksi kini memakai overlay di tengah layar (`components/shell/tx-overlay.tsx`, store `lib/tx-overlay.ts`), digerakkan oleh `useRun` sehingga setiap alur ikut otomatis.
+- Isi overlay:
+  - progress ring dengan persentase;
+  - daftar tahap yang direncanakan di awal (selesai / aktif / menunggu), dengan catatan "Approve in your wallet" atau "Waiting for fresh prices";
+  - tautan setiap transaksi;
+  - akhir yang jelas: sukses (tutup otomatis 1,6 s), gagal (tetap sampai ditutup), atau sebagian (tombol pemulihan);
+  - tombol "Hide" untuk mengecilkan jadi pil di pojok sementara alur tetap berjalan.
+- Alur yang dicakup:
+  - join (swap → deposit), redeem (siapkan akun → redeem → swap balik);
+  - create index (tabel alamat → create → manager → swap deposit → deposit), retry/finish deposit;
+  - finish join, swap to USDC;
+  - `/sign` agent (tahap dari server);
+  - setup dev wallet (mode otomatis tanpa prompt);
+  - semua aksi satu transaksi (manage, klaim, faucet).
+- Toast sukses tetap ada (konfirmasi kecil setelah overlay menutup). Toast peringatan untuk hasil sebagian tetap ada agar pemulihan bisa dijangkau setelah overlay ditutup. Toast loading dan toast error untuk run digantikan overlay.
+- Gaya mengikuti D034: hijau gelap, mint hanya untuk progres/sukses, coral untuk gagal, animasi halus (ring, ping titik aktif, zoom-in), tanpa gradien/ilustrasi.
+
+## D043 — 2026-09-25 — MCP remote publik (`/api/mcp`) dengan tool agent bertoken
+- Masalah: MCP hanya bisa dipakai dari mesin yang meng-clone repo (localhost-only). Konektor Claude.ai/ChatGPT butuh URL https publik.
+- Keputusan: web Next.js menyajikan factory server yang sama (`@repo/mcp/public`, `createServer({ agentTools })`) di `app/api/mcp/route.ts` lewat `createMcpHandler` (stateless per request, cocok untuk Vercel; klien 2025 dilayani fallback legacy stateless bawaan SDK). Health `/api/mcp/health`.
+- Keamanan endpoint publik:
+  - default hanya tool riset, `simulate_rebalance`, `build_*`, `get_intent_status`, resource `docs://guide` (user tetap menandatangani sendiri di `/sign`);
+  - `agent_*` hanya bila request membawa `Authorization: Bearer <MCP_AGENT_TOKEN>` (perbandingan waktu-konstan atas hash SHA-256) **dan** keypair agent tersedia (`AGENT_KEYPAIR_JSON` baru, atau file `AGENT_KEYPAIR_PATH`); batas program (mandate) tetap berlaku;
+  - CORS `*`, rate limit per IP 60/menit in-memory (per instance; cukup untuk demo, bukan jaminan global), 429 berbentuk JSON-RPC;
+  - tanpa validasi Host localhost (publik by design). Server lokal `apps/mcp` tetap localhost-only dan tidak berubah perilakunya; mode publik standalone lewat `MCP_PUBLIC=1` (+ `MCP_HOST`, `MCP_ALLOWED_HOSTS`, `PORT`).
+- URL: `MCP_WEB_URL` (basis panggilan API web dari MCP, default `WEB_URL`); link untuk user (`signUrl`, `/i/…`, URI metadata) selalu `WEB_URL`. `NEXT_PUBLIC_MCP_URL` untuk halaman Agents. Semua env baru opsional dan divalidasi zod (`mcpHttpEnvSchema`).
+- `vercel:env` menulis `NEXT_PUBLIC_MCP_URL` + `MCP_WEB_URL`; secret agent hanya dengan `--with-agent` (token acak baru, nilai tidak dicetak).
+- `Bun.sleep` di `tools/agent.ts` diganti `setTimeout` agar modul bisa berjalan di runtime Node (Vercel).
+- Cloudflare Workers ditolak untuk sekarang: `readDeployment`/keypair via `node:fs`, pool postgres.js global (Workers melarang I/O lintas request; butuh klien per request + Hyperdrive), `Bun.serve`. Alternatif: route Vercel atau host Bun mana pun.
+
+## D044 — 2026-09-25 — Agent menjelaskan keputusan di feed + runner otonom `agent:loop`
+- Tool MCP baru `agent_post` (mode agent wallet): agent memposting dari wallet-nya sendiri, opsional menempel ke index (alamat/simbol) dan tampil sebagai kartu (`mark|tokens|chart`).
+  - Menulis langsung lewat `createPost` di `@repo/db` (MCP sudah punya akses DB), tanpa sesi web.
+  - Aturan konten sama dengan web (D033): ≤500 karakter, ≤2 link, tanpa karakter berulang panjang, tanpa duplikat 24 jam. Disalin ke `apps/mcp/src/social.ts` karena `antispam.ts` web bersifat `server-only`.
+  - Batas laju khusus agent dari DB (`postStats`/`isDuplicate`): jeda ≥60 s, ≤30 post/hari.
+  - Wajib `users.isAgent` (agent_register); syarat "aktivitas on-chain" web tidak dipakai karena agent manager bisa tidak punya event Joined/IndexCreated.
+  - URL hasil: `/i/<index>` bila menempel ke index, selain itu `/u/<wallet>` (belum ada permalink post).
+- Tool baca `get_feed`: post terbaru untuk satu index (`/api/posts?index=`) atau feed umum dengan aktivitas on-chain (`/api/feed?tab=all`).
+- `docs://guide`: setelah setiap `agent_rebalance`/`agent_propose_update` agent wajib `agent_post` yang menjelaskan apa, mengapa (angka), dan langkah berikutnya.
+- Runner `scripts/agent-loop.ts` (`bun run agent:loop`): klien MCP Streamable HTTP + LLM via API chat completions kompatibel OpenAI (default OpenRouter). Env dibaca langsung dari `process.env` (bukan skema `packages/config`, agar tidak bentrok dengan pekerjaan paralel): `AGENT_MCP_URL`, `AGENT_MCP_TOKEN`, `AGENT_LLM_BASE_URL`, `AGENT_LLM_API_KEY`, `AGENT_LLM_MODEL`, `AGENT_LOOP_INTERVAL`.
+  - Tool yang disembunyikan dari LLM otonom: `build_*` dan `get_intent_status` (butuh manusia), `agent_create_index`/`agent_join` (memakai dana baru), `agent_register` (identitas; lewat flag `--register`).
+  - `--dry-run` menolak semua tool tulis (`agent_*` kecuali `agent_info`, `build_*`) di sisi klien.
+  - Maks 12 panggilan tool/siklus, nominal > `MCP_MAX_USDC_PER_ACTION` ditolak di klien, status post tanpa aksi maks 1 per index per hari (in-memory).
+- Perbaikan terkait: `agent_info` menampilkan saldo USDC `NaN` karena `fetchTokenBalances` (Map) di-destructure sebagai array; kini dibaca lewat `Map.get`.
+
+## D045 — 2026-09-25 — Agent milik user + API key (custody model A, devnet/localnet saja)
+- Masalah: agent `agent_*` hanya bisa memakai satu keypair operator (`AGENT_KEYPAIR_*` + `MCP_AGENT_TOKEN`, D043). User ingin membuat agent sendiri dari web dan menghubungkannya ke Claude Code/`agent:loop`, seperti konsol API.
+- Keputusan (dipilih user: model A, kustodi server):
+  - Server membuat seed ed25519 32 byte (crypto random) per agent, alamat diturunkan dengan `createKeyPairSignerFromPrivateKeyBytes`, seed disimpan terenkripsi AES-256-GCM di `agent_wallets.secret_enc` (format `base64(iv12|tag16|ciphertext)`, kunci = SHA-256(`AGENT_KEY_SECRET`)). Agent langsung terdaftar (`users.is_agent` + `agent_name`).
+  - API key `sbk_` + 32 byte acak base64url; yang disimpan hanya hash SHA-256 hex + prefix 12 karakter; key mentah ditampilkan sekali (`Cache-Control: no-store`). Cabut = `revoked_at`.
+  - Remote MCP: `Authorization: Bearer sbk_…` → resolve hash (abaikan yang dicabut; `last_used_at` diperbarui maks 1×/menit) → dekripsi seed → cek alamat turunan = wallet tersimpan → `createServer({ agent })`: semua tool memakai ctx dengan `agent` itu. Key tak valid → 401 (tidak jatuh ke mode anonim). Signer hanya diterima factory bila berasal dari resolver di proses yang sama (WeakSet), bukan dari header. Rate limit per key 120/menit + per IP.
+  - Batas: 3 agent/owner, 5 key aktif/agent (dicek dalam transaksi dengan advisory lock per owner/agent). Pemilik = wallet sesi sign-in (D033); mutasi wajib same-origin.
+  - Batas program tetap berlaku: agent yang dijadikan manager tidak bisa menarik dana; `MCP_MAX_USDC_PER_ACTION` tetap. Dana SOL untuk fee lewat `POST /api/me/agents/[wallet]/fund` yang memakai jalur faucet SOL yang sama (`lib/server/faucet.ts`, batas per wallet & harian sama).
+  - `AGENT_KEY_SECRET` (≥32 karakter, server-only) opsional di skema env; bila kosong fitur mati (503 "Agent creation is not configured on this server"; MCP: "Agent API keys are not configured on this server"). `bun run setup` membuatnya bila belum ada; `vercel:env` menyalinnya dari `.env`. Harus sama di semua server yang berbagi DB; kehilangan/mengganti secret = agent lama tidak bisa dibuka (tidak ada rotasi otomatis).
+- Risiko & batasan: kunci privat agent ada di server (siapa pun yang memegang DB + `AGENT_KEY_SECRET` bisa menandatangani sebagai agent). Dapat diterima karena aset simulasi dan hanya devnet/localnet. Untuk produksi: pindah ke wallet kustodian/MPC (Turnkey, Privy server wallets) dengan kebijakan per-key, atau model B (user mendelegasikan manager ke keypair yang dia pegang sendiri).
+- Alternatif ditolak: keypair per user di file (tidak jalan di Vercel), menyimpan seed tanpa enkripsi, mengembalikan key di listing.
+

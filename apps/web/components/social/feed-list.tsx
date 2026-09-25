@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { UserLink } from "@/components/data/addr";
 import { Avatar } from "@/components/data/avatar";
+import { AssetStack } from "@/components/data/glyph";
 import { RowsSkeleton } from "@/components/data/states";
 import { Button } from "@/components/ui/button";
 import { ago } from "@/lib/format";
@@ -39,8 +40,12 @@ function ActivityRow({ a }: { a: ActivityFeedItem }) {
         {a.index ? (
           <>
             {" · "}
-            <Link href={`/i/${a.index.pubkey}`} className="mono text-foreground hover:underline">
-              {a.index.symbol}
+            <Link
+              href={`/i/${a.index.pubkey}`}
+              className="inline-flex items-center gap-1.5 align-middle text-foreground hover:underline"
+            >
+              <span className="mono">{a.index.symbol}</span>
+              {a.index.assets?.length ? <AssetStack symbols={a.index.assets} size={16} /> : null}
             </Link>
           </>
         ) : null}

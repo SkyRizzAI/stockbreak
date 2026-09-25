@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { APP_NAME, CLUSTER_LABEL } from "@/lib/env";
+import { APP_NAME } from "@/lib/env";
 import { CommandPalette } from "./command-palette";
 import { DesktopNav } from "./nav";
 import { ThemeToggle } from "./theme-toggle";
@@ -34,12 +34,6 @@ export function TopBar() {
         <Logo />
         <DesktopNav />
         <div className="ml-auto flex items-center gap-2">
-          <span
-            className="hidden h-7 items-center rounded-sm border px-2.5 text-[13px] text-muted-foreground sm:inline-flex"
-            data-testid="cluster-badge"
-          >
-            {CLUSTER_LABEL}
-          </span>
           <CommandPalette />
           <ThemeToggle />
           <WalletButton />

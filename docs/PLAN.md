@@ -452,6 +452,9 @@ posts            (id PK, author, index null, card_variant null, body, like_count
                   index(created_at), index(author, created_at), index(index, created_at)
 post_likes       (post_id, wallet, created_at)  PK(post_id, wallet)
 post_comments    (id PK, post_id, author, body, created_at, deleted_at)  index(post_id, created_at), index(author, created_at)
+agent_wallets    (wallet PK, owner, name, secret_enc, created_at)  index(owner)                 -- D045: seed ed25519 terenkripsi AES-256-GCM
+api_keys         (id PK, agent_wallet FK→agent_wallets.wallet, owner, name, prefix, key_hash unique,
+                  created_at, last_used_at null, revoked_at null)  index(agent_wallet), index(owner)  -- D045: hanya hash SHA-256
 ```
 
 ### 7.4 `apps/worker`
@@ -468,6 +471,7 @@ Satu proses, beberapa loop dengan interval terpisah (env), masing-masing idempot
 - `GET /api/indexes` (sort, filter, search, paging), `GET /api/indexes/[pubkey]`, `GET /api/indexes/[pubkey]/performance?range=`, `GET /api/indexes/[pubkey]/activity`, `GET /api/leaderboard?board=&range=&type=`, `GET /api/users/[wallet]`, `GET /api/auth/nonce?wallet=&purpose=`, `POST /api/users/[wallet]` (update profil; wajib signMessage atas nonce), `POST /api/users/[wallet]/follow`, `POST /api/indexes/[pubkey]/meta` (deskripsi/thesis; wajib tanda tangan kreator atas nonce), `GET /api/meta/[pubkey]` (target `uri` on-chain), `GET /api/prices`, `GET /api/intents/[id]` + `POST /api/intents/[id]/tx` (bangun ulang tx intent dengan blockhash baru).
 - Blinks: `GET/POST /api/actions/join/[pubkey]` + `actions.json` di root, header CORS sesuai spesifikasi. Transaksi zap tunggal bila muat; bila tidak, action chaining.
 - OG: `/i/[pubkey]/opengraph-image`.
+- Konsol agent (D045, wajib sesi sign-in D033; mutasi wajib same-origin): `GET /api/me/agents` → `{ agents: [{ wallet, name, createdAt, keys: [{ id, name, prefix, createdAt, lastUsedAt, revokedAt }] }] }`; `POST /api/me/agents {name}` → `{ wallet, name }` (maks 3 agent/owner, 409); `POST /api/me/agents/[wallet]/keys {name}` → `{ id, key, prefix }` (key hanya sekali, maks 5 key aktif/agent, 409); `DELETE /api/me/keys/[id]` → `{ ok: true }`; `POST /api/me/agents/[wallet]/fund` → `{ ok, sol }` (aturan faucet SOL yang sama). Tanpa `AGENT_KEY_SECRET` → 503.
 
 ### 7.6 `apps/mcp`
 > D036: progres langkah /sign dipegang server dan maju hanya dengan signature yang terverifikasi on-chain (bisa dilanjutkan setelah terputus, tanpa mengulang swap). Status yang sudah dimulai kedaluwarsa 1 jam setelah `expiresAt`.
@@ -487,6 +491,8 @@ Mode human-in-the-loop (default): tool `build_*` menyimpan **intent** di `sign_i
 | `get_intent_status` | Status intent & signature; untuk create/clone juga `result.index` (D036) |
 | `agent_info`, `agent_register` | Identitas agent; register via tanda tangan pesan → `users.is_agent` |
 | `agent_create_index`, `agent_join`, `agent_rebalance`, `agent_propose_update` | Aksi dengan keypair agent |
+
+Endpoint publik (`/api/mcp`, standalone `MCP_PUBLIC=1`): `agent_*` hanya dengan `Bearer <MCP_AGENT_TOKEN>` (agent operator, keypair server) atau `Bearer sbk_…` = API key user (D045): server memverifikasi hash key, mendekripsi seed agent milik key itu, dan semua tool (termasuk default `get_portfolio`/`simulate_rebalance`) bertindak sebagai wallet agent tersebut. Key tak dikenal/dicabut → HTTP 401 JSON-RPC "Invalid or revoked API key" (tidak diturunkan diam-diam ke anonim). Rate limit per key 120/menit di samping per IP.
 
 Aturan: tolak cluster selain localnet/devnet; batas jumlah per aksi via env; tidak pernah mengembalikan secret/env; setiap tool punya deskripsi jelas dan schema zod; error program dikembalikan sebagai pesan manusia (`errors.ts`). Sediakan resource `docs://guide` berisi cara pakai singkat untuk LLM.
 

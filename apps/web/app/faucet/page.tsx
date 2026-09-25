@@ -27,7 +27,7 @@ export default function FaucetPage() {
   // One faucet tx may create the USDC account (~0.002 SOL rent) plus the fee.
   const needsSol = !!bal.data && bal.data.sol < MIN_SOL_FOR_USDC;
   return (
-    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 py-8 md:px-8">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Faucet</h1>

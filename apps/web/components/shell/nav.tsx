@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "cn";
-import { Compass, Home, LineChart, MessagesSquare, Plus, Trophy } from "lucide-react";
+import { Bot, Compass, Home, LineChart, MessagesSquare, Plus, Trophy } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -8,8 +8,8 @@ export const NAV = [
   { href: "/explore", label: "Explore", icon: Compass },
   { href: "/feed", label: "Feed", icon: MessagesSquare },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/agents", label: "AI", icon: Bot },
   { href: "/create", label: "Create", icon: Plus },
-  { href: "/portfolio", label: "Portfolio", icon: LineChart },
 ];
 
 export function DesktopNav() {
@@ -34,10 +34,12 @@ export function DesktopNav() {
 
 export function MobileNav() {
   const path = usePathname();
-  // Five slots on phones: Leaderboard stays reachable from Home and the Feed.
+  // Five slots on phones: Leaderboard and Agents stay reachable from Home.
   const items = [
     { href: "/", label: "Home", icon: Home },
-    ...NAV.filter((n) => n.href !== "/leaderboard"),
+    ...NAV.filter((n) => n.href !== "/leaderboard" && n.href !== "/agents"),
+    // Desktop reaches Portfolio from the wallet menu; phones keep it in the tab bar.
+    { href: "/portfolio", label: "Portfolio", icon: LineChart },
   ];
   return (
     <nav

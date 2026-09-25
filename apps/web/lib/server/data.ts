@@ -216,19 +216,41 @@ export async function chainNow(): Promise<number> {
   return Number(await chainClock(chain()));
 }
 
-export async function indexDetail(pubkey: string): Promise<IndexDetail | null> {
+/** Several panels poll the same index at once: share one computation for a few seconds. */
+const detailCache = new Map<string, { at: number; value: Promise<IndexDetail | null> }>();
+const DETAIL_TTL_MS = 4_000;
+
+export function indexDetail(pubkey: string): Promise<IndexDetail | null> {
+  const hit = detailCache.get(pubkey);
+  if (hit && Date.now() - hit.at < DETAIL_TTL_MS) return hit.value;
+  const value = computeIndexDetail(pubkey).catch((e: unknown) => {
+    detailCache.delete(pubkey);
+    throw e;
+  });
+  detailCache.set(pubkey, { at: Date.now(), value });
+  for (const [k, v] of detailCache) if (Date.now() - v.at > 60_000) detailCache.delete(k);
+  return value;
+}
+
+async function computeIndexDetail(pubkey: string): Promise<IndexDetail | null> {
   const c = chain();
   const d = db();
   const st = await fetchMaybeIndex(c, pubkey as Address);
   if (!st) return null;
-  const row = await getIndex(d, pubkey);
-  const summary = (await indexSummaries((r) => r.pubkey === pubkey))[0];
-  const v = await valueIndex(c, st);
-  const cfg = await fetchConfig(c, await configPda());
   const mgrs = managersOf(st);
-  const mgrUsers = await getUsers(d, mgrs);
-  const children = (await allIndexes(d)).filter((r) => r.parent === pubkey);
-  const ipos = (await eventsOfType(d, ["IpoMigrated"])).filter((e) => e.index === pubkey);
+  // Independent chain and DB reads in parallel (each devnet RPC round trip is ~0.3–1 s).
+  const [row, summaries, v, cfg, mgrUsers, all, ipoEvents] = await Promise.all([
+    getIndex(d, pubkey),
+    indexSummaries((r) => r.pubkey === pubkey),
+    valueIndex(c, st),
+    configPda().then((pda) => fetchConfig(c, pda)),
+    getUsers(d, mgrs),
+    allIndexes(d),
+    eventsOfType(d, ["IpoMigrated"]),
+  ]);
+  const summary = summaries[0];
+  const children = all.filter((r) => r.parent === pubkey);
+  const ipos = ipoEvents.filter((e) => e.index === pubkey);
   const pending: PendingUpdateJson | null =
     st.pendingUpdate.__option === "Some"
       ? {

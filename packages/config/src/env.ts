@@ -16,6 +16,8 @@ export const publicEnvSchema = z.object({
   NEXT_PUBLIC_RPC_URL: url.default("http://127.0.0.1:8899"),
   NEXT_PUBLIC_WS_URL: url.default("ws://127.0.0.1:8900"),
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default("Stockbreak"),
+  /** Public MCP endpoint shown on the Agents page; empty → `${origin}/api/mcp`. */
+  NEXT_PUBLIC_MCP_URL: url.optional(),
 });
 
 export const chainEnvSchema = z.object({
@@ -60,8 +62,15 @@ export const serverEnvSchema = chainEnvSchema.extend({
     .string()
     .optional()
     .transform((v) => (v ? v : undefined)),
+  /** Agent secret key as a JSON byte array (hosts without `.keys/`); wins over the path. */
+  AGENT_KEYPAIR_JSON: keypairJson,
   FAUCET_SOL_PER_REQUEST: z.coerce.number().positive().default(0.2),
   FAUCET_SOL_DAILY_CAP: z.coerce.number().positive().default(5),
+  /**
+   * Server-only secret that encrypts web-created agent wallets (D045). Optional here and
+   * checked (≥32 chars) where used: without it only agent creation / API keys are off.
+   */
+  AGENT_KEY_SECRET: z.string().optional(),
 });
 
 export const workerEnvSchema = serverEnvSchema.extend({
@@ -80,9 +89,41 @@ export const workerEnvSchema = serverEnvSchema.extend({
   GAMIFICATION_INTERVAL: secs(60),
 });
 
+const flag = z
+  .string()
+  .optional()
+  .transform((v) => v === "1" || v === "true");
+
+/**
+ * Exposure settings of the MCP HTTP endpoints (standalone server and the web route
+ * /api/mcp). Parsed on their own: they never need DATABASE_URL.
+ */
+export const mcpHttpEnvSchema = z.object({
+  /** Standalone server: public mode (bind MCP_HOST, no localhost-only Host check). */
+  MCP_PUBLIC: flag,
+  MCP_HOST: z.string().min(1).default("127.0.0.1"),
+  /** Public mode: allowed Host header hostnames (comma list); empty = any. */
+  MCP_ALLOWED_HOSTS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? "")
+        .split(",")
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /** Bearer token that unlocks agent_* tools on a public endpoint (server-only secret). */
+  MCP_AGENT_TOKEN: z.string().min(16, "MCP_AGENT_TOKEN must be at least 16 chars").optional(),
+  /** Requests per minute per client IP on a public endpoint. */
+  MCP_RATE_LIMIT: z.coerce.number().int().positive().default(60),
+});
+
 export const mcpEnvSchema = serverEnvSchema.extend({
+  ...mcpHttpEnvSchema.shape,
   MCP_HTTP_PORT: z.coerce.number().int().positive().default(3333),
   MCP_MAX_USDC_PER_ACTION: z.coerce.number().positive().default(1000),
+  /** Base URL the MCP server uses to call the web API (default WEB_URL). */
+  MCP_WEB_URL: url.optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -90,6 +131,7 @@ export type ChainEnv = z.infer<typeof chainEnvSchema>;
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 export type McpEnv = z.infer<typeof mcpEnvSchema>;
+export type McpHttpEnv = z.infer<typeof mcpHttpEnvSchema>;
 
 function blankToUndefined(
   src: Record<string, string | undefined>,

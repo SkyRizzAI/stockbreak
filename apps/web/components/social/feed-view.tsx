@@ -52,7 +52,7 @@ export function FeedView() {
     );
 
   return (
-    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-5 px-4 py-8 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Feed</h1>
