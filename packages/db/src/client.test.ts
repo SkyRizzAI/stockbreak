@@ -185,3 +185,23 @@ describe("worker lease", () => {
     expect(await acquireLease(db, "cron", "c", 60_000, new Date(t0.getTime() + 71_000))).toBe(true);
   });
 });
+
+test("activity excludes noisy types before the limit", async () => {
+  const { activity, insertEvents } = await import("./queries");
+  const ev = (i: number, type: string) => ({
+    signature: `act${i}`,
+    ixIndex: 0,
+    type,
+    index: "ACT",
+    wallet: "W9",
+    slot: 1n,
+    data: {},
+    ts: new Date(Date.UTC(2026, 5, 1, 0, i)),
+  });
+  await insertEvents(db, [
+    ev(0, "Joined"),
+    ...Array.from({ length: 5 }, (_, i) => ev(i + 1, "FeesAccrued")),
+  ]);
+  const rows = await activity(db, { index: "ACT", excludeTypes: ["FeesAccrued"] }, 3);
+  expect(rows.map((r) => r.type)).toEqual(["Joined"]);
+});

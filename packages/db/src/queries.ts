@@ -16,6 +16,7 @@ import {
   lte,
   max,
   min,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -512,13 +513,15 @@ export async function insertEvents(db: Db, rows: (typeof events.$inferInsert)[])
 
 export async function activity(
   db: Db,
-  filter: { index?: string; wallet?: string; types?: string[] },
+  filter: { index?: string; wallet?: string; types?: string[]; excludeTypes?: string[] },
   limit = 50,
 ): Promise<EventRow[]> {
   const conds = [];
   if (filter.index) conds.push(eq(events.index, filter.index));
   if (filter.wallet) conds.push(eq(events.wallet, filter.wallet));
   if (filter.types?.length) conds.push(inArray(events.type, filter.types));
+  // Excluded before LIMIT: frequent keeper events must not push everything else out.
+  if (filter.excludeTypes?.length) conds.push(notInArray(events.type, filter.excludeTypes));
   return db
     .select()
     .from(events)

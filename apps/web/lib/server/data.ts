@@ -482,8 +482,10 @@ export async function activity(
   limit = 50,
 ): Promise<ActivityItem[]> {
   const d = db();
-  const rows = (await activityRows(d, filter, limit)).filter(
-    (r) => r.type !== "FeesAccrued" && r.type !== "ConfigUpdated",
+  const rows = await activityRows(
+    d,
+    { ...filter, excludeTypes: ["FeesAccrued", "ConfigUpdated"] },
+    limit,
   );
   const users = await getUsers(d, [
     ...new Set(rows.map((r) => r.wallet).filter((w): w is string => !!w)),
