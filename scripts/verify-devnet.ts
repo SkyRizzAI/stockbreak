@@ -13,7 +13,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { clearFaucetClaimsSince, closeDb, getDb } from "@repo/db";
 import { rpcUrlFor } from "./lib/chain";
-import { devnetDbUrl, REMOTE_DEVNET_DB } from "./lib/devnet-db";
+import { devnetDbUrl } from "./lib/devnet-db";
 import { log, run } from "./lib/proc";
 import { ROOT, toolchainEnv } from "./lib/toolchain";
 
@@ -42,14 +42,6 @@ process.on("SIGINT", () => void stop().then(() => process.exit(130)));
 
 let code = 1;
 const started = new Date();
-// Test wallets, indexes and posts must never land in the public demo database.
-if (REMOTE_DEVNET_DB && !process.argv.includes("--allow-remote-db")) {
-  log(
-    S,
-    "DEVNET_DATABASE_URL is set (public demo DB). Run with DEVNET_DATABASE_URL= bun run verify:devnet, or pass --allow-remote-db.",
-  );
-  process.exit(1);
-}
 try {
   const running = await cluster();
   if (running === "devnet" && (await json(MCP))) {

@@ -1,5 +1,5 @@
 import { ASSETS } from "@repo/config";
-import { searchIndexes } from "@repo/db";
+import { searchIndexes, searchUsers } from "@repo/db";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/server/ctx";
 import { guard } from "@/lib/server/http";
@@ -12,10 +12,7 @@ export function GET(req: NextRequest) {
     if (!q) return { indexes: [], assets: [], creators: [] };
     const d = db();
     const indexes = await searchIndexes(d, q, 8);
-    const creators = await d.query.users.findMany({
-      where: (t, { ilike, or }) => or(ilike(t.handle, `%${q}%`), ilike(t.wallet, `${q}%`)),
-      limit: 6,
-    });
+    const creators = await searchUsers(d, q, 6);
     const ql = q.toLowerCase();
     const assets = ASSETS.filter(
       (a) => a.symbol.toLowerCase().includes(ql) || a.name.toLowerCase().includes(ql),

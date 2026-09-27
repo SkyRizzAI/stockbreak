@@ -1,5 +1,6 @@
 /**
  * All DB access for web, worker and MCP (CLAUDE.md: DB only via packages/db).
+ * SQLite dialect (D051): runs unchanged on Cloudflare D1 and local libSQL.
  */
 import {
   and,
@@ -8,13 +9,17 @@ import {
   desc,
   eq,
   gte,
-  ilike,
   inArray,
   isNotNull,
+  like,
   lt,
+  lte,
+  max,
+  min,
   or,
   sql,
 } from "drizzle-orm";
+import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { Db } from "./client";
 import {
   authNonces,
@@ -31,6 +36,7 @@ import {
   users,
   xpLedger,
 } from "./schema";
+import { chunkRows, inList } from "./sqlite";
 
 export type IndexRow = typeof indexes.$inferSelect;
 export type IndexInsert = typeof indexes.$inferInsert;
@@ -42,6 +48,19 @@ export type IntentRow = typeof signIntents.$inferSelect;
 export type PriceRow = typeof prices.$inferSelect;
 
 export const BENCHMARK_INDEX = "benchmark:SPYx";
+
+const DAY_MS = 86_400_000;
+
+/** Run a chunked multi-row insert (D1 parameter limit) and concatenate RETURNING rows. */
+async function insertChunked<T, R>(
+  table: SQLiteTable,
+  rows: T[],
+  run: (chunk: T[]) => Promise<R[]>,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (const chunk of chunkRows(table, rows)) out.push(...(await run(chunk)));
+  return out;
+}
 
 // ---------------- indexes ----------------
 
@@ -95,12 +114,15 @@ export async function indexesByCreator(db: Db, creator: string): Promise<IndexRo
     .orderBy(desc(indexes.createdAt));
 }
 
+/** Case-insensitive (SQLite LIKE ignores ASCII case). */
 export async function searchIndexes(db: Db, q: string, limit = 10): Promise<IndexRow[]> {
-  const like = `%${q}%`;
+  const pattern = `%${q}%`;
   return db
     .select()
     .from(indexes)
-    .where(or(ilike(indexes.name, like), ilike(indexes.symbol, like), ilike(indexes.pubkey, like)))
+    .where(
+      or(like(indexes.name, pattern), like(indexes.symbol, pattern), like(indexes.pubkey, pattern)),
+    )
     .limit(limit);
 }
 
@@ -117,11 +139,8 @@ export async function insertSnapshots(
   db: Db,
   rows: (typeof indexSnapshots.$inferInsert)[],
 ): Promise<void> {
-  for (let i = 0; i < rows.length; i += 500)
-    await db
-      .insert(indexSnapshots)
-      .values(rows.slice(i, i + 500))
-      .onConflictDoNothing();
+  for (const chunk of chunkRows(indexSnapshots, rows))
+    await db.insert(indexSnapshots).values(chunk).onConflictDoNothing();
 }
 
 export async function snapshotSeries(db: Db, index: string, since: Date): Promise<SnapshotRow[]> {
@@ -143,30 +162,34 @@ export async function latestSnapshot(db: Db, index: string): Promise<SnapshotRow
   )[0];
 }
 
+/**
+ * Snapshot rows whose ts is the per-index extreme (`pick`) within `where`, keyed by index.
+ * (Portable replacement for Postgres DISTINCT ON.)
+ */
+async function snapshotsAtEdge(
+  db: Db,
+  pick: "max" | "min",
+  where?: ReturnType<typeof and>,
+): Promise<Map<string, SnapshotRow>> {
+  const edge = db
+    .select({
+      index: indexSnapshots.index,
+      ts: (pick === "max" ? max(indexSnapshots.ts) : min(indexSnapshots.ts)).as("edge_ts"),
+    })
+    .from(indexSnapshots)
+    .where(where)
+    .groupBy(indexSnapshots.index)
+    .as("edge");
+  const rows = await db
+    .select({ s: indexSnapshots })
+    .from(indexSnapshots)
+    .innerJoin(edge, and(eq(indexSnapshots.index, edge.index), eq(indexSnapshots.ts, edge.ts)));
+  return new Map(rows.map(({ s }) => [s.index, s]));
+}
+
 /** Latest snapshot per index (one query). */
 export async function latestSnapshots(db: Db): Promise<Map<string, SnapshotRow>> {
-  const rows = await db.execute<{
-    index: string;
-    ts: Date;
-    nav_micro_usd: string;
-    supply: string;
-    share_price_micro_usd: string;
-    weights: unknown;
-    synthetic: boolean;
-  }>(sql`SELECT DISTINCT ON (index) * FROM index_snapshots ORDER BY index, ts DESC`);
-  const out = new Map<string, SnapshotRow>();
-  for (const r of rows) {
-    out.set(r.index, {
-      index: r.index,
-      ts: new Date(r.ts),
-      navMicroUsd: BigInt(r.nav_micro_usd),
-      supply: BigInt(r.supply),
-      sharePriceMicroUsd: BigInt(r.share_price_micro_usd),
-      weights: r.weights,
-      synthetic: r.synthetic,
-    });
-  }
-  return out;
+  return snapshotsAtEdge(db, "max");
 }
 
 /**
@@ -181,22 +204,18 @@ export async function sharePricesAt(
   at: Date,
   opts: { fallbackToFirst?: boolean } = {},
 ): Promise<Map<string, bigint>> {
-  const rows = await db.execute<{ index: string; share_price_micro_usd: string }>(
-    sql`SELECT DISTINCT ON (index) index, share_price_micro_usd FROM index_snapshots WHERE ts <= ${at.toISOString()}::timestamptz ORDER BY index, ts DESC`,
-  );
+  const atOrBefore = await snapshotsAtEdge(db, "max", and(lte(indexSnapshots.ts, at)));
   const windowMs = Math.max(0, Date.now() - at.getTime());
   const toleranceMs = Math.max(6 * 3_600_000, Math.floor(windowMs / 10));
   const firstLimit =
     opts.fallbackToFirst || at.getTime() <= 0 ? null : new Date(at.getTime() + toleranceMs);
-  const firsts = await db.execute<{ index: string; ts: Date; share_price_micro_usd: string }>(
-    sql`SELECT DISTINCT ON (index) index, ts, share_price_micro_usd FROM index_snapshots ORDER BY index, ts ASC`,
-  );
+  const firsts = await snapshotsAtEdge(db, "min");
   const out = new Map<string, bigint>();
-  for (const r of firsts) {
-    if (firstLimit && new Date(r.ts).getTime() > firstLimit.getTime()) continue;
-    out.set(r.index, BigInt(r.share_price_micro_usd));
+  for (const r of firsts.values()) {
+    if (firstLimit && r.ts.getTime() > firstLimit.getTime()) continue;
+    out.set(r.index, r.sharePriceMicroUsd);
   }
-  for (const r of rows) out.set(r.index, BigInt(r.share_price_micro_usd));
+  for (const r of atOrBefore.values()) out.set(r.index, r.sharePriceMicroUsd);
   return out;
 }
 
@@ -205,20 +224,35 @@ export async function firstSharePrices(db: Db): Promise<Map<string, bigint>> {
   return sharePricesAt(db, new Date(0), { fallbackToFirst: true });
 }
 
-/** Daily closing share price per index since `since` (sparklines). */
+/** Daily closing share price per index since `since` (sparklines), UTC days. */
 export async function dailyCloses(
   db: Db,
   since: Date,
 ): Promise<Map<string, { ts: Date; v: bigint }[]>> {
-  const rows = await db.execute<{ index: string; d: Date; share_price_micro_usd: string }>(
-    sql`SELECT DISTINCT ON (index, date_trunc('day', ts)) index, date_trunc('day', ts) AS d, share_price_micro_usd
-        FROM index_snapshots WHERE ts >= ${since.toISOString()}::timestamptz
-        ORDER BY index, date_trunc('day', ts), ts DESC`,
-  );
+  // Integer division (a bound number may arrive as REAL and keep the fraction).
+  const day = sql`cast(${indexSnapshots.ts} / ${sql.raw(String(DAY_MS))} as integer)`;
+  const closes = db
+    .select({ index: indexSnapshots.index, ts: max(indexSnapshots.ts).as("close_ts") })
+    .from(indexSnapshots)
+    .where(gte(indexSnapshots.ts, since))
+    .groupBy(indexSnapshots.index, day)
+    .as("closes");
+  const rows = await db
+    .select({
+      index: indexSnapshots.index,
+      ts: indexSnapshots.ts,
+      v: indexSnapshots.sharePriceMicroUsd,
+    })
+    .from(indexSnapshots)
+    .innerJoin(
+      closes,
+      and(eq(indexSnapshots.index, closes.index), eq(indexSnapshots.ts, closes.ts)),
+    )
+    .orderBy(asc(indexSnapshots.index), asc(indexSnapshots.ts));
   const out = new Map<string, { ts: Date; v: bigint }[]>();
   for (const r of rows) {
     const list = out.get(r.index) ?? [];
-    list.push({ ts: new Date(r.d), v: BigInt(r.share_price_micro_usd) });
+    list.push({ ts: new Date(Math.floor(r.ts.getTime() / DAY_MS) * DAY_MS), v: r.v });
     out.set(r.index, list);
   }
   return out;
@@ -356,20 +390,19 @@ export function reconcileDelta(
   return { shares: chainShares, costBasisMicroUsd: cost };
 }
 
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-async function writePosition(
-  tx: Tx,
+/** The statement that stores a position (a delete when it is empty); not executed. */
+function positionWrite(
+  db: Db,
   wallet: string,
   index: string,
   next: { shares: bigint; costBasisMicroUsd: bigint },
   firstJoinedAt: Date,
-): Promise<void> {
-  if (next.shares <= 0n) {
-    await tx.delete(positions).where(and(eq(positions.wallet, wallet), eq(positions.index, index)));
-    return;
-  }
-  await tx
+) {
+  if (next.shares <= 0n)
+    return db
+      .delete(positions)
+      .where(and(eq(positions.wallet, wallet), eq(positions.index, index)));
+  return db
     .insert(positions)
     .values({ wallet, index, ...next, firstJoinedAt })
     .onConflictDoUpdate({
@@ -378,21 +411,11 @@ async function writePosition(
     });
 }
 
-async function lockedPosition(tx: Tx, wallet: string, index: string) {
-  return (
-    await tx
-      .select()
-      .from(positions)
-      .where(and(eq(positions.wallet, wallet), eq(positions.index, index)))
-      .limit(1)
-      .for("update")
-  )[0];
-}
-
 /**
- * Atomically store one transaction's events, apply the position deltas of the
- * events that were newly inserted (replays are no-ops), and advance the
- * indexer cursor to this transaction. Returns the number of new event rows.
+ * Store one transaction's events, apply the position deltas of the events that are new
+ * (replays are no-ops) and advance the indexer cursor to this transaction, as one atomic
+ * batch (D1 has no interactive transactions). The indexer is the only writer of events
+ * and positions. Returns the number of new event rows.
  */
 export async function applyIndexedTx(
   db: Db,
@@ -405,29 +428,55 @@ export async function applyIndexedTx(
     deltas: Map<number, PositionDelta>;
   },
 ): Promise<number> {
-  return db.transaction(async (tx) => {
-    const inserted = input.events.length
-      ? await tx
-          .insert(events)
-          .values(input.events)
-          .onConflictDoNothing()
-          .returning({ ixIndex: events.ixIndex })
-      : [];
-    for (const { ixIndex } of inserted) {
-      const d = input.deltas.get(ixIndex);
-      if (!d || d.wallet === d.index) continue;
-      const prev = await lockedPosition(tx, d.wallet, d.index);
-      await writePosition(tx, d.wallet, d.index, applyDelta(prev, d), prev?.firstJoinedAt ?? d.ts);
+  const stored = new Set(
+    (
+      await db
+        .select({ ixIndex: events.ixIndex })
+        .from(events)
+        .where(eq(events.signature, input.signature))
+    ).map((r) => r.ixIndex),
+  );
+  const fresh = input.events.filter((e) => !stored.has(e.ixIndex));
+  // Positions after this tx, per wallet+index (several events may touch the same one).
+  const next = new Map<
+    string,
+    {
+      wallet: string;
+      index: string;
+      pos: { shares: bigint; costBasisMicroUsd: bigint };
+      first: Date;
     }
-    await tx
-      .insert(indexerState)
-      .values({ program: input.program, lastSignature: input.signature, lastSlot: input.slot })
-      .onConflictDoUpdate({
-        target: indexerState.program,
-        set: { lastSignature: input.signature, lastSlot: input.slot, updatedAt: new Date() },
-      });
-    return inserted.length;
-  });
+  >();
+  for (const e of fresh) {
+    const d = input.deltas.get(e.ixIndex);
+    if (!d || d.wallet === d.index) continue;
+    const key = `${d.wallet}:${d.index}`;
+    let cur = next.get(key);
+    if (!cur) {
+      const row = await getPosition(db, d.wallet, d.index);
+      cur = {
+        wallet: d.wallet,
+        index: d.index,
+        pos: row ?? { shares: 0n, costBasisMicroUsd: 0n },
+        first: row?.firstJoinedAt ?? d.ts,
+      };
+      next.set(key, cur);
+    }
+    cur.pos = applyDelta(cur.pos, d);
+  }
+  const cursor = db
+    .insert(indexerState)
+    .values({ program: input.program, lastSignature: input.signature, lastSlot: input.slot })
+    .onConflictDoUpdate({
+      target: indexerState.program,
+      set: { lastSignature: input.signature, lastSlot: input.slot, updatedAt: new Date() },
+    });
+  await db.batch([
+    cursor,
+    ...chunkRows(events, fresh).map((c) => db.insert(events).values(c).onConflictDoNothing()),
+    ...[...next.values()].map((p) => positionWrite(db, p.wallet, p.index, p.pos, p.first)),
+  ]);
+  return fresh.length;
 }
 
 /** Bring a stored position in line with the on-chain share balance. Returns true if it changed. */
@@ -439,29 +488,25 @@ export async function reconcilePosition(
   sharePriceMicroUsd: bigint,
 ): Promise<boolean> {
   if (wallet === index) return false;
-  return db.transaction(async (tx) => {
-    const prev = await lockedPosition(tx, wallet, index);
-    if ((prev?.shares ?? 0n) === chainShares) return false;
-    await writePosition(
-      tx,
-      wallet,
-      index,
-      reconcileDelta(prev, chainShares, sharePriceMicroUsd),
-      prev?.firstJoinedAt ?? new Date(),
-    );
-    return true;
-  });
+  const prev = await getPosition(db, wallet, index);
+  if ((prev?.shares ?? 0n) === chainShares) return false;
+  await positionWrite(
+    db,
+    wallet,
+    index,
+    reconcileDelta(prev, chainShares, sharePriceMicroUsd),
+    prev?.firstJoinedAt ?? new Date(),
+  );
+  return true;
 }
 
 // ---------------- events ----------------
 
 export async function insertEvents(db: Db, rows: (typeof events.$inferInsert)[]): Promise<number> {
   if (!rows.length) return 0;
-  const res = await db
-    .insert(events)
-    .values(rows)
-    .onConflictDoNothing()
-    .returning({ s: events.signature });
+  const res = await insertChunked(events, rows, (c) =>
+    db.insert(events).values(c).onConflictDoNothing().returning({ s: events.signature }),
+  );
   return res.length;
 }
 
@@ -516,26 +561,23 @@ export async function setIndexerState(
 // ---------------- prices ----------------
 
 export async function insertPrices(db: Db, rows: (typeof prices.$inferInsert)[]): Promise<void> {
-  if (rows.length) await db.insert(prices).values(rows).onConflictDoNothing();
+  for (const chunk of chunkRows(prices, rows))
+    await db.insert(prices).values(chunk).onConflictDoNothing();
 }
 
+/** Latest price per symbol (one query). */
 export async function latestPrices(db: Db): Promise<PriceRow[]> {
-  const rows = await db.execute<{
-    symbol: string;
-    ts: Date;
-    price_micro_usd: string;
-    source: string;
-    synthetic: boolean;
-  }>(
-    sql`SELECT DISTINCT ON (symbol) symbol, ts, price_micro_usd, source, synthetic FROM prices ORDER BY symbol, ts DESC`,
-  );
-  return rows.map((r) => ({
-    symbol: r.symbol,
-    ts: new Date(r.ts),
-    priceMicroUsd: BigInt(r.price_micro_usd),
-    source: r.source,
-    synthetic: r.synthetic,
-  }));
+  const last = db
+    .select({ symbol: prices.symbol, ts: max(prices.ts).as("last_ts") })
+    .from(prices)
+    .groupBy(prices.symbol)
+    .as("last");
+  const rows = await db
+    .select({ p: prices })
+    .from(prices)
+    .innerJoin(last, and(eq(prices.symbol, last.symbol), eq(prices.ts, last.ts)))
+    .orderBy(asc(prices.symbol));
+  return rows.map((r) => r.p);
 }
 
 export async function priceAt(db: Db, symbol: string, at: Date): Promise<bigint | null> {
@@ -564,8 +606,17 @@ export async function getUser(db: Db, wallet: string): Promise<UserRow | undefin
 
 export async function getUsers(db: Db, wallets: string[]): Promise<Map<string, UserRow>> {
   if (!wallets.length) return new Map();
-  const rows = await db.select().from(users).where(inArray(users.wallet, wallets));
+  const rows = await db.select().from(users).where(inList(users.wallet, wallets));
   return new Map(rows.map((r) => [r.wallet, r]));
+}
+
+/** Creators by handle (substring) or wallet (prefix); case-insensitive. */
+export async function searchUsers(db: Db, q: string, limit = 6): Promise<UserRow[]> {
+  return db
+    .select()
+    .from(users)
+    .where(or(like(users.handle, `%${q}%`), like(users.wallet, `${q}%`)))
+    .limit(limit);
 }
 
 export async function ensureUser(db: Db, wallet: string): Promise<UserRow> {
@@ -704,27 +755,19 @@ export async function followStats(db: Db, wallet: string, viewer?: string) {
 
 // ---------------- gamification ----------------
 
-const AWARD_CHUNK = 1000; // 4 params per row, well under the 65,535 limit
-
 export async function awardXp(
   db: Db,
   rows: { wallet: string; amount: number; reason: string; ref: string }[],
 ): Promise<number> {
-  let added = 0;
-  for (let i = 0; i < rows.length; i += AWARD_CHUNK) {
-    const r = await db
-      .insert(xpLedger)
-      .values(rows.slice(i, i + AWARD_CHUNK))
-      .onConflictDoNothing()
-      .returning({ id: xpLedger.id });
-    added += r.length;
-  }
-  return added;
+  const r = await insertChunked(xpLedger, rows, (c) =>
+    db.insert(xpLedger).values(c).onConflictDoNothing().returning({ id: xpLedger.id }),
+  );
+  return r.length;
 }
 
 export async function xpOf(db: Db, wallet: string): Promise<number> {
   const r = await db
-    .select({ xp: sql<string>`COALESCE(SUM(${xpLedger.amount}), 0)` })
+    .select({ xp: sql<number>`coalesce(sum(${xpLedger.amount}), 0)` })
     .from(xpLedger)
     .where(eq(xpLedger.wallet, wallet));
   return Number(r[0]?.xp ?? 0);
@@ -732,7 +775,7 @@ export async function xpOf(db: Db, wallet: string): Promise<number> {
 
 export async function xpTotals(db: Db): Promise<Map<string, number>> {
   const r = await db
-    .select({ w: xpLedger.wallet, xp: sql<string>`SUM(${xpLedger.amount})` })
+    .select({ w: xpLedger.wallet, xp: sql<number>`sum(${xpLedger.amount})` })
     .from(xpLedger)
     .groupBy(xpLedger.wallet);
   return new Map(r.map((x) => [x.w, Number(x.xp)]));
@@ -761,28 +804,20 @@ export async function awardBadges(
   db: Db,
   rows: { wallet: string; badge: string }[],
 ): Promise<number> {
-  let added = 0;
-  for (let i = 0; i < rows.length; i += AWARD_CHUNK) {
-    const r = await db
-      .insert(badges)
-      .values(rows.slice(i, i + AWARD_CHUNK))
-      .onConflictDoNothing()
-      .returning({ b: badges.badge });
-    added += r.length;
-  }
-  return added;
+  const r = await insertChunked(badges, rows, (c) =>
+    db.insert(badges).values(c).onConflictDoNothing().returning({ b: badges.badge }),
+  );
+  return r.length;
 }
 
 export async function badgesOf(db: Db, wallet: string) {
   return db.select().from(badges).where(eq(badges.wallet, wallet)).orderBy(asc(badges.awardedAt));
 }
 
-export async function countTable(
-  db: Db,
-  table: "users" | "badges" | "xp_ledger" | "positions" | "indexes" | "prices",
-): Promise<number> {
-  const r = await db.execute<{ n: string }>(sql.raw(`SELECT COUNT(*)::text AS n FROM ${table}`));
-  return Number(r[0]?.n ?? 0);
+const COUNTABLE = { users, badges, xp_ledger: xpLedger, positions, indexes, prices } as const;
+
+export async function countTable(db: Db, table: keyof typeof COUNTABLE): Promise<number> {
+  return (await db.select({ n: count() }).from(COUNTABLE[table]))[0]?.n ?? 0;
 }
 
 export const levelOf = (xp: number): number => Math.floor(Math.sqrt(xp / 50));
@@ -805,10 +840,10 @@ export async function faucetSince(
   ];
   if (filter.wallet) conds.push(eq(faucetClaims.wallet, filter.wallet));
   const r = await db
-    .select({ s: sql<string>`COALESCE(SUM(${faucetClaims.amount}), 0)` })
+    .select({ s: sql<number>`coalesce(sum(${faucetClaims.amount}), 0)` })
     .from(faucetClaims)
     .where(and(...conds));
-  return BigInt(r[0]?.s ?? "0");
+  return BigInt(Math.trunc(Number(r[0]?.s ?? 0)));
 }
 
 export { isNotNull };

@@ -8,9 +8,10 @@
  * Devnet/localnet only; production custody belongs in an HSM/MPC wallet provider.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { and, asc, count, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import { agentWallets, apiKeys } from "./schema";
+import { firstColumn } from "./sqlite";
 
 export const API_KEY_PREFIX = "sbk_";
 export const MAX_AGENTS_PER_OWNER = 3;
@@ -72,22 +73,21 @@ export interface OwnerAgent {
   }[];
 }
 
-/** Insert an agent wallet; returns null when the owner already has the maximum. */
+/**
+ * Insert an agent wallet; returns null when the owner already has the maximum.
+ * One conditional INSERT (SQLite serializes writes), so parallel requests can't both
+ * pass the limit.
+ */
 export async function createAgentWallet(
   db: Db,
   row: { wallet: string; owner: string; name: string; secretEnc: string },
 ): Promise<AgentWalletRow | null> {
-  return db.transaction(async (tx) => {
-    // Serialize per owner so two parallel requests can't both pass the limit.
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`agents:${row.owner}`}))`);
-    const [c] = await tx
-      .select({ n: count() })
-      .from(agentWallets)
-      .where(eq(agentWallets.owner, row.owner));
-    if ((c?.n ?? 0) >= MAX_AGENTS_PER_OWNER) return null;
-    const [r] = await tx.insert(agentWallets).values(row).returning();
-    return r ?? null;
-  });
+  const inserted = await db.all(sql`
+    insert into ${agentWallets} (wallet, owner, name, secret_enc, created_at)
+    select ${row.wallet}, ${row.owner}, ${row.name}, ${row.secretEnc}, ${Date.now()}
+    where (select count(*) from ${agentWallets} where owner = ${row.owner}) < ${MAX_AGENTS_PER_OWNER}
+    returning wallet`);
+  return inserted.length ? getAgentWallet(db, row.wallet) : null;
 }
 
 export async function getAgentWallet(db: Db, wallet: string): Promise<AgentWalletRow | null> {
@@ -142,33 +142,21 @@ export async function createApiKey(
   db: Db,
   args: { owner: string; agentWallet: string; name: string },
 ): Promise<{ id: number; key: string; prefix: string } | "not_found" | "limit"> {
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`keys:${args.agentWallet}`}))`);
-    const [agent] = await tx
-      .select({ wallet: agentWallets.wallet })
-      .from(agentWallets)
-      .where(and(eq(agentWallets.wallet, args.agentWallet), eq(agentWallets.owner, args.owner)))
-      .limit(1);
-    if (!agent) return "not_found";
-    const [c] = await tx
-      .select({ n: count() })
-      .from(apiKeys)
-      .where(and(eq(apiKeys.agentWallet, args.agentWallet), isNull(apiKeys.revokedAt)));
-    if ((c?.n ?? 0) >= MAX_KEYS_PER_AGENT) return "limit";
-    const k = generateApiKey();
-    const [r] = await tx
-      .insert(apiKeys)
-      .values({
-        agentWallet: args.agentWallet,
-        owner: args.owner,
-        name: args.name,
-        prefix: k.prefix,
-        keyHash: k.hash,
-      })
-      .returning({ id: apiKeys.id });
-    if (!r) throw new Error("Could not create the API key");
-    return { id: r.id, key: k.key, prefix: k.prefix };
-  });
+  const [agent] = await db
+    .select({ wallet: agentWallets.wallet })
+    .from(agentWallets)
+    .where(and(eq(agentWallets.wallet, args.agentWallet), eq(agentWallets.owner, args.owner)))
+    .limit(1);
+  if (!agent) return "not_found";
+  const k = generateApiKey();
+  // Conditional INSERT: the active-key limit holds under parallel requests.
+  const [r] = await db.all(sql`
+    insert into ${apiKeys} (agent_wallet, owner, name, prefix, key_hash, created_at)
+    select ${args.agentWallet}, ${args.owner}, ${args.name}, ${k.prefix}, ${k.hash}, ${Date.now()}
+    where (select count(*) from ${apiKeys} where agent_wallet = ${args.agentWallet} and revoked_at is null) < ${MAX_KEYS_PER_AGENT}
+    returning id`);
+  if (!r) return "limit";
+  return { id: Number(firstColumn(r)), key: k.key, prefix: k.prefix };
 }
 
 /** Revoke one of the owner's keys; false when it doesn't exist or isn't theirs. */

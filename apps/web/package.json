@@ -8,6 +8,7 @@
     "start": "next start --port 3000",
     "check-types": "next typegen && tsc --noEmit",
     "cf:build": "opennextjs-cloudflare build",
+    "cf:migrate": "wrangler d1 migrations apply stockbreak --remote",
     "cf:deploy": "opennextjs-cloudflare deploy",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview"
   },

@@ -1,40 +1,12 @@
 {
   "version": "7",
-  "dialect": "postgresql",
+  "dialect": "sqlite",
   "entries": [
     {
       "idx": 0,
-      "version": "7",
-      "when": 1790191637200,
-      "tag": "0000_tearful_princess_powerful",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1790222517394,
-      "tag": "0001_clumsy_psylocke",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1790251165741,
-      "tag": "0002_melodic_daredevil",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1790349714251,
-      "tag": "0003_lyrical_storm",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1790350994413,
-      "tag": "0004_bizarre_black_tarantula",
+      "version": "6",
+      "when": 1790484253462,
+      "tag": "0000_cynical_rictor",
       "breakpoints": true
     }
   ]

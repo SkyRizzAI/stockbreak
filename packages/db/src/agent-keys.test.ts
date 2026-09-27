@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { inArray, sql } from "drizzle-orm";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { inArray } from "drizzle-orm";
 import {
   agentKeySecret,
   createAgentWallet,
@@ -16,7 +18,7 @@ import {
   resolveApiKey,
   revokeApiKey,
 } from "./agent-keys";
-import { closeDb, getDb } from "./client";
+import { closeDb, getDb, migrateDb } from "./client";
 import { agentWallets, apiKeys } from "./schema";
 
 const SECRET = "s".repeat(32);
@@ -61,16 +63,12 @@ describe("api key format", () => {
   });
 });
 
-// DB-backed checks against the test database (app_test); skipped when it is not reachable.
-const TEST_DB =
-  process.env.TEST_DATABASE_URL || "postgres://postgres:postgres@localhost:5434/app_test";
+// DB-backed checks on a fresh, migrated SQLite file (D051).
+const TEST_DB = `file:${path.join(tmpdir(), `stockbreak-${randomBytes(6).toString("hex")}.db`)}`;
 const db = getDb(TEST_DB);
-const dbUp = await db
-  .execute(sql`select 1 from api_keys limit 1`)
-  .then(() => true)
-  .catch(() => false);
-if (!dbUp) console.warn("[agent-keys.test] DB checks skipped: app_test not reachable/migrated");
-const d = dbUp ? describe : describe.skip;
+await migrateDb(TEST_DB);
+const dbUp = true;
+const d = describe;
 
 const owner = `test-owner-${Date.now()}`;
 const other = `test-other-${Date.now()}`;

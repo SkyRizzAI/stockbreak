@@ -17,6 +17,7 @@
     "demo:record": "bun scripts/e2e.ts --fresh --demo",
     "agent:token": "bun scripts/agent-token.ts",
     "setup": "bun scripts/setup.ts",
+    "db:migrate": "bun scripts/db-migrate.ts",
     "seed": "bun scripts/seed.ts",
     "price": "bun scripts/price.ts",
     "warp": "bun scripts/warp.ts",
@@ -26,8 +27,6 @@
     "verify": "bun scripts/verify.ts",
     "verify:devnet": "bun scripts/verify-devnet.ts",
     "check:public": "bun scripts/check-public.ts",
-    "db:remote": "bun scripts/db-remote.ts",
-    "vercel:env": "bun scripts/vercel-env.ts",
     "deploy:devnet": "bun scripts/deploy-devnet.ts",
     "agent:loop": "bun scripts/agent-loop.ts"
   },

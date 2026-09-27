@@ -53,7 +53,7 @@ flowchart LR
   K -- Autopilot runs the same MCP tools --> M
   S --> IV[index_vault program]
   S --> MM[mock_market program · oracle, swaps, IPO]
-  W & M & K --> DB[(Postgres: cache, history, social)]
+  W & M & K --> DB[(SQLite / Cloudflare D1: cache, history, social)]
 ```
 
 - **Index = vault PDA + share mint.** Join deposits every asset in the vault's ratio and mints shares; redeem burns shares for the underlying. After the first deposit no oracle is needed, so this is hard to manipulate. The web zaps USDC in and out for you.
@@ -110,7 +110,7 @@ The pre-IPO sleeve uses **PreStocks** assets only (SpaceX, OpenAI, Anthropic, An
 ```bash
 git clone <repo-url> stocklana && cd stocklana
 bun install
-bun run setup        # checks toolchain, creates .keys/ and .env, Postgres + migrations, Playwright
+bun run setup        # checks toolchain, creates .keys/ and .env, SQLite databases (.data/) + migrations, Playwright
 bun run dev          # Surfpool + programs + bootstrap + worker + MCP + web
 bun run seed         # second terminal: demo wallets, 7 indexes, 30 days of history, posts
 ```
@@ -135,7 +135,6 @@ The full guide, including connecting Claude as an agent, is in [docs/DEMO.md](do
 | Solana CLI (Agave) | 4.2.x |
 | [Anchor](https://www.anchor-lang.com/docs/installation) (AVM) | 1.2.x |
 | [Surfpool](https://docs.surfpool.run) | ≥ 1.6 |
-| Docker (Desktop or OrbStack) | Compose v2+ |
 
 `bun run setup` checks all of these and prints install hints.
 
@@ -155,7 +154,7 @@ The full guide, including connecting Claude as an agent, is in [docs/DEMO.md](do
 | Run an agent loop yourself | `bun run agent:loop -- --once --dry-run` |
 | Record the demo clips (1080p) | `bun run demo:record` |
 
-Ports: web 3000 (remote MCP at `/api/mcp`), MCP 3333 (`/mcp`), RPC 8899/8900, Postgres 5434.
+Ports: web 3000 (remote MCP at `/api/mcp`), MCP 3333 (`/mcp`), RPC 8899/8900. The database is a local SQLite file in `.data/` (no Docker); the hosted demo uses Cloudflare D1.
 
 ## Repository layout
 
@@ -174,6 +173,6 @@ docs/            plan, architecture, demo, deploy, decisions, status (Indonesian
 
 ## Built with
 
-Anchor 1.2 · LiteSVM · Surfpool · `@solana/kit` + Codama · `@solana/react` + Wallet Standard · Next.js 16 · Tailwind + shadcn/ui · TanStack Query · PostgreSQL + Drizzle · MCP TypeScript SDK · OpenAI-compatible LLM API (Autopilot) · Solana Actions/Blinks · Playwright · Bun + Turborepo + Biome · Cloudflare Workers (OpenNext, Cron Triggers).
+Anchor 1.2 · LiteSVM · Surfpool · `@solana/kit` + Codama · `@solana/react` + Wallet Standard · Next.js 16 · Tailwind + shadcn/ui · TanStack Query · SQLite (Cloudflare D1) + Drizzle · MCP TypeScript SDK · OpenAI-compatible LLM API (Autopilot) · Solana Actions/Blinks · Playwright · Bun + Turborepo + Biome · Cloudflare Workers (OpenNext, Cron Triggers).
 
 Open-source components are used as dependencies under their licenses. All application code in this repository was written for the hackathon.

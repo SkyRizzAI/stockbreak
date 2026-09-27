@@ -90,6 +90,7 @@ Legenda: `[ ]` belum · `[~]` berjalan · `[x]` selesai · `BLOCKED(eksternal): 
   - SUBMISSION: live URL, deskripsi AI, angka tes.
   - `docs/landing.md`: daftar tool terbaru.
   - Footer "Built for Stocklana" tetap, karena itu nama hackathon.
+- 2026-09-27: contract: D051 — database pindah ke SQLite: Cloudflare D1 `stockbreak` (produksi) + `node:sqlite` lokal (`.data/*.db`), satu skema/kode query, adapter di `packages/db/src/client.ts`; tanpa transaksi interaktif (batch/UPDATE bersyarat), lease cron `cron-window`, Docker/`db:remote`/`vercel:env` dihapus. Penyebab: kuota Neon Free habis (situs 500 sejak 2026-09-26). Gate: typecheck 7/7, lint, test:ts 5/5 (DB 23 test di SQLite), `bun run dev` + seed lokal (semua halaman/API 200), build OpenNext + worker, `wrangler d1 migrations apply --local`, web + cron di workerd dengan D1 lokal (resync/indexer mengisi D1, lease menolak window ganda). Fix: `/api/search` (ilike) dipindah ke `searchUsers`; kartu OG dipindah ke `lib/server/index-card.tsx` (route path tetap gagal di `next dev`).
 
 ## Ringkasan akhir (2026-09-24)
 **Yang jadi**: dua program Anchor (`index_vault`, `mock_market`) + 38 test LiteSVM; SDK kit/Codama (zap, rebalance sandwich, ALT, IPO, humanisasi error, paritas math); worker (harga live Jupiter/Finnhub → oracle, indexer, snapshot, keeper, fee, follow, gamifikasi); web Next.js (explore, index, create/clone/follow wizard, manage, portfolio, leaderboard, profil, faucet, agents, sign, Blink, OG); MCP server (18 tool, stdio + HTTP); e2e Playwright (DoD §11.1 otomatis); deploy devnet.

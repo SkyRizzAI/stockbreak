@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { eq, inArray, sql } from "drizzle-orm";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { eq, inArray } from "drizzle-orm";
 import {
   AUTOPILOT_KEEP_RUNS,
   AUTOPILOT_STALE_MS,
@@ -14,19 +16,15 @@ import {
   saveAutopilot,
   setWorkerStatus,
 } from "./autopilot";
-import { closeDb, getDb } from "./client";
+import { closeDb, getDb, migrateDb } from "./client";
 import { agentAutopilot, agentRuns, agentWallets, workerStatus } from "./schema";
 
-// DB-backed checks against the test database (app_test); skipped when it is not reachable.
-const TEST_DB =
-  process.env.TEST_DATABASE_URL || "postgres://postgres:postgres@localhost:5434/app_test";
+// DB-backed checks on a fresh, migrated SQLite file (D051).
+const TEST_DB = `file:${path.join(tmpdir(), `stockbreak-${randomBytes(6).toString("hex")}.db`)}`;
 const db = getDb(TEST_DB);
-const dbUp = await db
-  .execute(sql`select 1 from agent_autopilot limit 1`)
-  .then(() => true)
-  .catch(() => false);
-if (!dbUp) console.warn("[autopilot.test] DB checks skipped: app_test not reachable/migrated");
-const d = dbUp ? describe : describe.skip;
+await migrateDb(TEST_DB);
+const dbUp = true;
+const d = describe;
 
 const wallets: string[] = [];
 const HB = `test-autopilot-${Date.now()}`;

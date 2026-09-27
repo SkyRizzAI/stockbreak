@@ -65,7 +65,7 @@ if (!d0)
 const d = d0;
 const symbolOf = (m: string) =>
   Object.entries(d.mints).find(([, v]) => v === m)?.[0] ?? m.slice(0, 4);
-// Devnet: the same database the devnet stack uses (hosted when DEVNET_DATABASE_URL is set).
+// Devnet: the same local database the devnet stack uses (.data/app_devnet.db).
 const dbUrl = c.cluster === "devnet" ? devnetDbUrl() : process.env.DATABASE_URL;
 const db = getDb(dbUrl);
 const mint = (s: string) => {

@@ -1,12 +1,10 @@
 /**
- * The devnet database every script shares: the hosted one when DEVNET_DATABASE_URL is set
- * (public demo, docs/DEPLOY.md), otherwise the local `app_devnet` database.
+ * The local devnet database every script shares: `.data/app_devnet.db` next to the
+ * localnet `.data/app.db` (D051). The hosted demo uses Cloudflare D1, which only the
+ * Workers reach (docs/DEPLOY.md "Opsi C").
  */
-export const REMOTE_DEVNET_DB = process.env.DEVNET_DATABASE_URL || "";
-
 export function devnetDbUrl(): string {
-  if (REMOTE_DEVNET_DB) return REMOTE_DEVNET_DB;
-  const u = new URL(process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5434/app");
-  u.pathname = "/app_devnet";
-  return u.toString();
+  const base = process.env.DATABASE_URL || "file:.data/app.db";
+  if (!base.startsWith("file:")) return "file:.data/app_devnet.db";
+  return base.replace(/([^/]+?)(\.db)?$/, "app_devnet.db");
 }

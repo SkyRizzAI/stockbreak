@@ -2,7 +2,7 @@
  * A fresh local validator means all chain-derived rows are stale. Keep only
  * user profiles, social follows and sign-in sessions (keyed by wallet, still meaningful).
  */
-import { getDb, schema } from "@repo/db";
+import { getDb } from "@repo/db";
 import { sql } from "drizzle-orm";
 
 const CHAIN_TABLES = [
@@ -24,7 +24,8 @@ const CHAIN_TABLES = [
 
 export async function resetChainTables(url = process.env.DATABASE_URL): Promise<void> {
   const db = getDb(url);
-  void schema;
-  await db.execute(sql.raw(`TRUNCATE ${CHAIN_TABLES.join(", ")}`));
+  // SQLite has no TRUNCATE; one atomic batch of DELETEs.
+  const [first, ...rest] = CHAIN_TABLES.map((t) => db.run(sql.raw(`DELETE FROM ${t}`)));
+  if (first) await db.batch([first, ...rest]);
   console.log(`[db] reset chain tables (${CHAIN_TABLES.length})`);
 }

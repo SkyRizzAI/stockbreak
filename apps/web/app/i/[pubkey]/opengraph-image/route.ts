@@ -1,4 +1,4 @@
-import Image from "../../../(app)/i/[pubkey]/opengraph-image";
+import { indexCardImage } from "@/lib/server/index-card";
 
 export const dynamic = "force-dynamic";
 
@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
  * Blink icons and on-chain token metadata link /i/<pubkey>/opengraph-image.
  */
 export async function GET(_req: Request, ctx: RouteContext<"/i/[pubkey]/opengraph-image">) {
-  return Image({ params: ctx.params });
+  return indexCardImage((await ctx.params).pubkey);
 }

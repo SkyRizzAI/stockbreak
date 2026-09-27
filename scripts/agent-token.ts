@@ -4,8 +4,8 @@
  * Creates the operator token that unlocks agent_* MCP tools (remote /api/mcp or a public
  * standalone MCP) and writes it to the root .env as MCP_AGENT_TOKEN (server side) and
  * AGENT_MCP_TOKEN (what `bun run agent:loop` sends). An existing token is kept unless
- * --rotate. The token is shown once so you can paste it into your MCP client; for Vercel,
- * put the same value in the project's MCP_AGENT_TOKEN (or use `vercel:env -- --with-agent`).
+ * --rotate. The token is shown once so you can paste it into your MCP client; for the
+ * Cloudflare deployment, add the same value as the `MCP_AGENT_TOKEN` secret of the web Worker.
  */
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -47,8 +47,8 @@ Use it:
   Claude Code   claude mcp add --transport http stockbreak <MCP URL> \\
                   --header "Authorization: Bearer ${token}"
   Agent loop    already set as AGENT_MCP_TOKEN in .env
-  Vercel        project → Settings → Environment Variables → MCP_AGENT_TOKEN = the token
-                (plus AGENT_KEYPAIR_JSON; \`bun run vercel:env -- --with-agent\` writes both)
+  Cloudflare    web Worker → Settings → Variables and Secrets → MCP_AGENT_TOKEN (Secret)
+                plus AGENT_KEYPAIR_JSON (content of .keys/agent.json) as a Secret
 
 Restart the server that serves /api/mcp (bun run dev / dev:devnet, or redeploy) to apply it.${
   keypair

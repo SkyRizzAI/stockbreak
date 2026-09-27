@@ -1,8 +1,10 @@
 /**
  * Social feed queries (D033): sessions, posts, likes, comments and the
  * counters used by anti-spam rules. DB access only via packages/db.
+ * SQLite dialect (D051): counters are recomputed from their source rows inside one
+ * atomic batch (D1 has no interactive transactions).
  */
-import { and, count, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lt, max, or, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import type { EventRow } from "./queries";
 import {
@@ -15,6 +17,7 @@ import {
   posts,
   socialFollows,
 } from "./schema";
+import { inList } from "./sqlite";
 
 export type PostRow = typeof posts.$inferSelect;
 export type CommentRow = typeof postComments.$inferSelect;
@@ -54,24 +57,34 @@ export async function hasOnchainActivity(db: Db, wallet: string): Promise<boolea
   return r.length > 0;
 }
 
-export async function postStats(
+/** Rows by `author` since each window, plus the latest creation time (ms columns). */
+async function authorStats(
   db: Db,
+  table: typeof posts | typeof postComments,
   author: string,
   windows: { short: Date; day: Date },
 ): Promise<{ short: number; day: number; last: Date | null }> {
   const [r] = await db
     .select({
-      short: sql<number>`count(*) filter (where ${posts.createdAt} >= ${windows.short.toISOString()}::timestamptz)`,
-      day: sql<number>`count(*) filter (where ${posts.createdAt} >= ${windows.day.toISOString()}::timestamptz)`,
-      last: sql<string | null>`max(${posts.createdAt})`,
+      short: sql<number>`count(*) filter (where ${table.createdAt} >= ${windows.short.getTime()})`,
+      day: sql<number>`count(*) filter (where ${table.createdAt} >= ${windows.day.getTime()})`,
+      last: max(table.createdAt),
     })
-    .from(posts)
-    .where(eq(posts.author, author));
+    .from(table)
+    .where(eq(table.author, author));
   return {
     short: Number(r?.short ?? 0),
     day: Number(r?.day ?? 0),
-    last: r?.last ? new Date(r.last) : null,
+    last: r?.last ?? null,
   };
+}
+
+export async function postStats(
+  db: Db,
+  author: string,
+  windows: { short: Date; day: Date },
+): Promise<{ short: number; day: number; last: Date | null }> {
+  return authorStats(db, posts, author, windows);
 }
 
 export async function commentStats(
@@ -79,19 +92,7 @@ export async function commentStats(
   author: string,
   windows: { short: Date; day: Date },
 ): Promise<{ short: number; day: number; last: Date | null }> {
-  const [r] = await db
-    .select({
-      short: sql<number>`count(*) filter (where ${postComments.createdAt} >= ${windows.short.toISOString()}::timestamptz)`,
-      day: sql<number>`count(*) filter (where ${postComments.createdAt} >= ${windows.day.toISOString()}::timestamptz)`,
-      last: sql<string | null>`max(${postComments.createdAt})`,
-    })
-    .from(postComments)
-    .where(eq(postComments.author, author));
-  return {
-    short: Number(r?.short ?? 0),
-    day: Number(r?.day ?? 0),
-    last: r?.last ? new Date(r.last) : null,
-  };
+  return authorStats(db, postComments, author, windows);
 }
 
 export async function likesSince(db: Db, wallet: string, since: Date): Promise<number> {
@@ -159,8 +160,8 @@ export async function listPosts(
   limit: number,
 ): Promise<PostRow[]> {
   const scope = [];
-  if (filter.authors?.length) scope.push(inArray(posts.author, filter.authors));
-  if (filter.indexes?.length) scope.push(inArray(posts.index, filter.indexes));
+  if (filter.authors?.length) scope.push(inList(posts.author, filter.authors));
+  if (filter.indexes?.length) scope.push(inList(posts.index, filter.indexes));
   const conds = [isNull(posts.deletedAt)];
   if (beforeId !== null) conds.push(lt(posts.id, beforeId));
   if (filter.index) conds.push(eq(posts.index, filter.index));
@@ -179,39 +180,30 @@ export async function listPosts(
 
 // ---------------- likes ----------------
 
-/** Like / unlike; keeps posts.like_count in step. Returns the new count. */
+const likeCountOf = (postId: number) =>
+  sql`(select count(*) from ${postLikes} where ${postLikes.postId} = ${postId})`;
+const commentCountOf = (postId: number) =>
+  sql`(select count(*) from ${postComments} where ${postComments.postId} = ${postId} and ${postComments.deletedAt} is null)`;
+
+/** Like / unlike; keeps posts.like_count in step (recounted in the same batch). Returns the new count. */
 export async function setLike(
   db: Db,
   postId: number,
   wallet: string,
   like: boolean,
 ): Promise<number> {
-  return db.transaction(async (tx) => {
-    if (like) {
-      const ins = await tx
-        .insert(postLikes)
-        .values({ postId, wallet })
-        .onConflictDoNothing()
-        .returning({ postId: postLikes.postId });
-      if (ins.length)
-        await tx
-          .update(posts)
-          .set({ likeCount: sql`${posts.likeCount} + 1` })
-          .where(eq(posts.id, postId));
-    } else {
-      const del = await tx
-        .delete(postLikes)
-        .where(and(eq(postLikes.postId, postId), eq(postLikes.wallet, wallet)))
-        .returning({ postId: postLikes.postId });
-      if (del.length)
-        await tx
-          .update(posts)
-          .set({ likeCount: sql`greatest(${posts.likeCount} - 1, 0)` })
-          .where(eq(posts.id, postId));
-    }
-    const [p] = await tx.select({ n: posts.likeCount }).from(posts).where(eq(posts.id, postId));
-    return p?.n ?? 0;
-  });
+  const change = like
+    ? db.insert(postLikes).values({ postId, wallet }).onConflictDoNothing()
+    : db.delete(postLikes).where(and(eq(postLikes.postId, postId), eq(postLikes.wallet, wallet)));
+  const [, , [p]] = await db.batch([
+    change,
+    db
+      .update(posts)
+      .set({ likeCount: likeCountOf(postId) })
+      .where(eq(posts.id, postId)),
+    db.select({ n: posts.likeCount }).from(posts).where(eq(posts.id, postId)),
+  ]);
+  return p?.n ?? 0;
 }
 
 /** Post ids among `postIds` liked by `wallet`. */
@@ -220,7 +212,7 @@ export async function likedBy(db: Db, wallet: string, postIds: number[]): Promis
   const r = await db
     .select({ id: postLikes.postId })
     .from(postLikes)
-    .where(and(eq(postLikes.wallet, wallet), inArray(postLikes.postId, postIds)));
+    .where(and(eq(postLikes.wallet, wallet), inList(postLikes.postId, postIds)));
   return new Set(r.map((x) => x.id));
 }
 
@@ -230,37 +222,31 @@ export async function createComment(
   db: Db,
   row: { postId: number; author: string; body: string },
 ): Promise<CommentRow> {
-  return db.transaction(async (tx) => {
-    const c = (await tx.insert(postComments).values(row).returning())[0] as CommentRow;
-    await tx
+  const [[c]] = await db.batch([
+    db.insert(postComments).values(row).returning(),
+    db
       .update(posts)
-      .set({ commentCount: sql`${posts.commentCount} + 1` })
-      .where(eq(posts.id, row.postId));
-    return c;
-  });
+      .set({ commentCount: commentCountOf(row.postId) })
+      .where(eq(posts.id, row.postId)),
+  ]);
+  return c as CommentRow;
 }
 
 export async function deleteComment(db: Db, id: number, author: string): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    const r = await tx
-      .update(postComments)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(postComments.id, id),
-          eq(postComments.author, author),
-          isNull(postComments.deletedAt),
-        ),
-      )
-      .returning({ postId: postComments.postId });
-    const postId = r[0]?.postId;
-    if (postId === undefined) return false;
-    await tx
-      .update(posts)
-      .set({ commentCount: sql`greatest(${posts.commentCount} - 1, 0)` })
-      .where(eq(posts.id, postId));
-    return true;
-  });
+  const r = await db
+    .update(postComments)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(eq(postComments.id, id), eq(postComments.author, author), isNull(postComments.deletedAt)),
+    )
+    .returning({ postId: postComments.postId });
+  const postId = r[0]?.postId;
+  if (postId === undefined) return false;
+  await db
+    .update(posts)
+    .set({ commentCount: commentCountOf(postId) })
+    .where(eq(posts.id, postId));
+  return true;
 }
 
 export async function listComments(db: Db, postId: number, limit = 100): Promise<CommentRow[]> {
@@ -300,12 +286,12 @@ export async function feedEvents(
   limit: number,
 ): Promise<EventRow[]> {
   const scope = [];
-  if (filter.wallets?.length) scope.push(inArray(events.wallet, filter.wallets));
-  if (filter.indexes?.length) scope.push(inArray(events.index, filter.indexes));
+  if (filter.wallets?.length) scope.push(inList(events.wallet, filter.wallets));
+  if (filter.indexes?.length) scope.push(inList(events.index, filter.indexes));
   const conds = [inArray(events.type, filter.types)];
   if (before)
     conds.push(
-      sql`(${events.ts}, ${events.signature}, ${events.ixIndex}) < (${before.ts.toISOString()}::timestamptz, ${before.signature}, ${before.ixIndex})`,
+      sql`(${events.ts}, ${events.signature}, ${events.ixIndex}) < (${before.ts.getTime()}, ${before.signature}, ${before.ixIndex})`,
     );
   if (scope.length) {
     const s = scope.length === 1 ? scope[0] : or(...scope);

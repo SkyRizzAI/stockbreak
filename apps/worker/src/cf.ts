@@ -8,7 +8,7 @@
  * Nth minute. Keep the loop list in sync with main.ts.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { closeDb } from "@repo/db";
+import { acquireLease, closeDb, releaseLease } from "@repo/db";
 import { describeError } from "@repo/sdk";
 import { createWorkerCtx, redact, type WorkerCtx } from "./ctx";
 import { autopilotTick } from "./loops/autopilot";
@@ -25,6 +25,15 @@ interface Loop {
 
 /** No new tick starts after this; a running tick may finish before the next minute. */
 const WINDOW_MS = 40_000;
+/**
+ * One window at a time (D051): a window can outlive its minute (slow RPC, the first
+ * indexer backfill) and D1 has no row locks, so overlapping windows would apply the same
+ * position deltas twice. The lease is renewed while the window runs and released at its end.
+ */
+const LEASE = "cron-window";
+/** A live window renews every LEASE_RENEW_MS; a dead one frees the lease within LEASE_MS. */
+const LEASE_MS = 90_000;
+const LEASE_RENEW_MS = 30_000;
 
 // Same per-request scope contract as OpenNext: @repo/db opens its clients in it.
 const scope = new AsyncLocalStorage<{ env: unknown; ctx: object }>();
@@ -63,6 +72,15 @@ async function runWindow(scheduledTime: number): Promise<void> {
   const minute = Math.floor(scheduledTime / 60_000);
   const c = await createWorkerCtx();
   const e = c.env;
+  const holder = crypto.randomUUID();
+  if (!(await acquireLease(c.db, LEASE, holder, LEASE_MS))) {
+    c.log("worker", "previous window still running; skipping this minute");
+    await closeDb(e.DATABASE_URL).catch(() => {});
+    return;
+  }
+  const renew = setInterval(() => {
+    acquireLease(c.db, LEASE, holder, LEASE_MS).catch(() => {});
+  }, LEASE_RENEW_MS);
   try {
     c.log("worker", `cron cluster=${e.CLUSTER} rpc=${redact(e.RPC_URL)} price=${e.PRICE_MODE}`);
     // Price first so oracles are fresh before anything reads them.
@@ -86,6 +104,8 @@ async function runWindow(scheduledTime: number): Promise<void> {
       }),
     );
   } finally {
+    clearInterval(renew);
+    await releaseLease(c.db, LEASE, holder).catch(() => {});
     await closeDb(e.DATABASE_URL).catch(() => {});
     c.log("worker", `window done in ${Math.round((Date.now() - start) / 1000)}s`);
   }

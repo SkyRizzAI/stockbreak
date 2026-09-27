@@ -1,6 +1,7 @@
 /**
- * Hosted autopilot (D047): per-agent settings, due-run claiming with row locks,
- * the run log and the worker heartbeat the web uses for `available`.
+ * Hosted autopilot (D047): per-agent settings, due-run claiming, the run log and the
+ * worker heartbeat the web uses for `available`. SQLite dialect (D051): no interactive
+ * transactions or row locks; a due run is claimed with a conditional UPDATE instead.
  */
 import { and, asc, desc, eq, gt, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "./client";
@@ -55,37 +56,31 @@ export async function saveAutopilot(
   patch: AutopilotPatch,
   now = new Date(),
 ): Promise<AutopilotRow> {
-  return db.transaction(async (tx) => {
-    await tx.insert(agentAutopilot).values({ agentWallet: wallet }).onConflictDoNothing();
-    const [cur] = await tx
-      .select()
-      .from(agentAutopilot)
-      .where(eq(agentAutopilot.agentWallet, wallet))
-      .for("update");
-    if (!cur) throw new Error("Autopilot settings row missing");
-    const enabled = patch.enabled ?? cur.enabled;
-    const interval = patch.intervalMinutes ?? cur.intervalMinutes;
-    let nextRunAt = cur.nextRunAt;
-    if (enabled && !cur.enabled) nextRunAt = now;
-    else if (enabled && interval !== cur.intervalMinutes) {
-      const byInterval = new Date((cur.lastRunAt ?? now).getTime() + interval * MINUTE);
-      if (!nextRunAt || byInterval < nextRunAt) nextRunAt = byInterval;
-    }
-    const [r] = await tx
-      .update(agentAutopilot)
-      .set({
-        enabled,
-        intervalMinutes: interval,
-        strategy: patch.strategy ?? cur.strategy,
-        indexes: patch.indexes ?? cur.indexes,
-        nextRunAt,
-        updatedAt: now,
-      })
-      .where(eq(agentAutopilot.agentWallet, wallet))
-      .returning();
-    if (!r) throw new Error("Could not save autopilot settings");
-    return r;
-  });
+  await db.insert(agentAutopilot).values({ agentWallet: wallet }).onConflictDoNothing();
+  const cur = await getAutopilot(db, wallet);
+  if (!cur) throw new Error("Autopilot settings row missing");
+  const enabled = patch.enabled ?? cur.enabled;
+  const interval = patch.intervalMinutes ?? cur.intervalMinutes;
+  let nextRunAt = cur.nextRunAt;
+  if (enabled && !cur.enabled) nextRunAt = now;
+  else if (enabled && interval !== cur.intervalMinutes) {
+    const byInterval = new Date((cur.lastRunAt ?? now).getTime() + interval * MINUTE);
+    if (!nextRunAt || byInterval < nextRunAt) nextRunAt = byInterval;
+  }
+  const [r] = await db
+    .update(agentAutopilot)
+    .set({
+      enabled,
+      intervalMinutes: interval,
+      strategy: patch.strategy ?? cur.strategy,
+      indexes: patch.indexes ?? cur.indexes,
+      nextRunAt,
+      updatedAt: now,
+    })
+    .where(eq(agentAutopilot.agentWallet, wallet))
+    .returning();
+  if (!r) throw new Error("Could not save autopilot settings");
+  return r;
 }
 
 export async function hasRunningRun(db: Db, wallet: string, now = new Date()): Promise<boolean> {
@@ -114,38 +109,23 @@ export async function requestAutopilotRun(
   wallet: string,
   now = new Date(),
 ): Promise<RunRequest> {
-  return db.transaction(async (tx) => {
-    await tx.insert(agentAutopilot).values({ agentWallet: wallet }).onConflictDoNothing();
-    const [cur] = await tx
-      .select()
-      .from(agentAutopilot)
-      .where(eq(agentAutopilot.agentWallet, wallet))
-      .for("update");
-    if (!cur) throw new Error("Autopilot settings row missing");
-    const [running] = await tx
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.agentWallet, wallet),
-          eq(agentRuns.status, "running"),
-          gt(agentRuns.startedAt, new Date(now.getTime() - AUTOPILOT_STALE_MS)),
-        ),
-      )
-      .limit(1);
-    if (running || cur.runRequested) return { status: "running" };
-    const since = cur.lastManualRunAt ? now.getTime() - cur.lastManualRunAt.getTime() : Infinity;
-    if (since < AUTOPILOT_MANUAL_WINDOW_MS)
-      return {
-        status: "rate_limited",
-        retryAfterSecs: Math.ceil((AUTOPILOT_MANUAL_WINDOW_MS - since) / 1000),
-      };
-    await tx
-      .update(agentAutopilot)
-      .set({ runRequested: true, nextRunAt: now, lastManualRunAt: now })
-      .where(eq(agentAutopilot.agentWallet, wallet));
-    return { status: "queued" };
-  });
+  await db.insert(agentAutopilot).values({ agentWallet: wallet }).onConflictDoNothing();
+  const cur = await getAutopilot(db, wallet);
+  if (!cur) throw new Error("Autopilot settings row missing");
+  if (cur.runRequested || (await hasRunningRun(db, wallet, now))) return { status: "running" };
+  const since = cur.lastManualRunAt ? now.getTime() - cur.lastManualRunAt.getTime() : Infinity;
+  if (since < AUTOPILOT_MANUAL_WINDOW_MS)
+    return {
+      status: "rate_limited",
+      retryAfterSecs: Math.ceil((AUTOPILOT_MANUAL_WINDOW_MS - since) / 1000),
+    };
+  // Only one of two concurrent requests flips run_requested (the other sees "running").
+  const [set] = await db
+    .update(agentAutopilot)
+    .set({ runRequested: true, nextRunAt: now, lastManualRunAt: now })
+    .where(and(eq(agentAutopilot.agentWallet, wallet), eq(agentAutopilot.runRequested, false)))
+    .returning({ w: agentAutopilot.agentWallet });
+  return set ? { status: "queued" } : { status: "running" };
 }
 
 export interface ClaimedRun {
@@ -159,8 +139,8 @@ export interface ClaimedRun {
 
 /**
  * Pick up to `limit` due agents (enabled or run requested, next_run_at <= now, no run in
- * progress), lock them (FOR UPDATE SKIP LOCKED), move next_run_at forward and open a
- * `running` run row, all in one transaction: two workers never claim the same agent.
+ * progress), claim each with a conditional UPDATE on its old next_run_at (only one worker
+ * wins a race) and open a `running` run row for the ones this worker claimed.
  */
 export async function claimDueAutopilots(
   db: Db,
@@ -168,46 +148,51 @@ export async function claimDueAutopilots(
   now = new Date(),
 ): Promise<ClaimedRun[]> {
   await failStaleRuns(db, now);
-  return db.transaction(async (tx) => {
-    const staleBefore = new Date(now.getTime() - AUTOPILOT_STALE_MS);
-    const due = await tx
-      .select()
-      .from(agentAutopilot)
+  const staleBefore = new Date(now.getTime() - AUTOPILOT_STALE_MS);
+  const due = await db
+    .select()
+    .from(agentAutopilot)
+    .where(
+      and(
+        lte(agentAutopilot.nextRunAt, now),
+        or(eq(agentAutopilot.enabled, true), eq(agentAutopilot.runRequested, true)),
+        sql`not exists (select 1 from ${agentRuns} where ${agentRuns.agentWallet} = ${agentAutopilot.agentWallet} and ${agentRuns.status} = 'running' and ${agentRuns.startedAt} > ${staleBefore.getTime()})`,
+      ),
+    )
+    .orderBy(asc(agentAutopilot.nextRunAt))
+    .limit(Math.max(0, limit));
+  const out: ClaimedRun[] = [];
+  for (const a of due) {
+    if (!a.nextRunAt) continue;
+    const [claimed] = await db
+      .update(agentAutopilot)
+      .set({
+        runRequested: false,
+        nextRunAt: a.enabled ? new Date(now.getTime() + a.intervalMinutes * MINUTE) : null,
+      })
       .where(
         and(
-          lte(agentAutopilot.nextRunAt, now),
-          or(eq(agentAutopilot.enabled, true), eq(agentAutopilot.runRequested, true)),
-          sql`not exists (select 1 from ${agentRuns} where ${agentRuns.agentWallet} = ${agentAutopilot.agentWallet} and ${agentRuns.status} = 'running' and ${agentRuns.startedAt} > ${staleBefore.toISOString()}::timestamptz)`,
+          eq(agentAutopilot.agentWallet, a.agentWallet),
+          eq(agentAutopilot.nextRunAt, a.nextRunAt),
         ),
       )
-      .orderBy(asc(agentAutopilot.nextRunAt))
-      .limit(Math.max(0, limit))
-      .for("update", { skipLocked: true });
-    const out: ClaimedRun[] = [];
-    for (const a of due) {
-      await tx
-        .update(agentAutopilot)
-        .set({
-          runRequested: false,
-          nextRunAt: a.enabled ? new Date(now.getTime() + a.intervalMinutes * MINUTE) : null,
-        })
-        .where(eq(agentAutopilot.agentWallet, a.agentWallet));
-      const [run] = await tx
-        .insert(agentRuns)
-        .values({ agentWallet: a.agentWallet, status: "running", startedAt: now })
-        .returning({ id: agentRuns.id });
-      if (!run) throw new Error("Could not open a run");
-      out.push({
-        runId: run.id,
-        agentWallet: a.agentWallet,
-        strategy: a.strategy,
-        indexes: a.indexes,
-        intervalMinutes: a.intervalMinutes,
-        manual: a.runRequested,
-      });
-    }
-    return out;
-  });
+      .returning({ w: agentAutopilot.agentWallet });
+    if (!claimed) continue; // another worker took it
+    const [run] = await db
+      .insert(agentRuns)
+      .values({ agentWallet: a.agentWallet, status: "running", startedAt: now })
+      .returning({ id: agentRuns.id });
+    if (!run) throw new Error("Could not open a run");
+    out.push({
+      runId: run.id,
+      agentWallet: a.agentWallet,
+      strategy: a.strategy,
+      indexes: a.indexes,
+      intervalMinutes: a.intervalMinutes,
+      manual: a.runRequested,
+    });
+  }
+  return out;
 }
 
 /** Close `running` rows left behind by a stopped worker. */
@@ -315,4 +300,41 @@ export async function getWorkerStatus(
     .where(eq(workerStatus.name, name))
     .limit(1);
   return r ?? null;
+}
+
+// ---------------- worker lease ----------------
+
+/**
+ * Take (or keep) a named lease for `holder` until `now + ttlMs`; false when another holder
+ * owns a live lease. One conditional UPSERT, so two overlapping cron invocations never both
+ * win (D1 has no row locks). Stored in worker_status (`info.holder`, `info.until`).
+ */
+export async function acquireLease(
+  db: Db,
+  name: string,
+  holder: string,
+  ttlMs: number,
+  now = new Date(),
+): Promise<boolean> {
+  const info = JSON.stringify({ holder, until: now.getTime() + ttlMs });
+  const rows = await db.all(sql`
+    insert into ${workerStatus} (name, info, updated_at) values (${name}, ${info}, ${now.getTime()})
+    on conflict (name) do update set info = excluded.info, updated_at = excluded.updated_at
+    where json_extract(${workerStatus.info}, '$.until') < ${now.getTime()}
+       or json_extract(${workerStatus.info}, '$.holder') = ${holder}
+    returning name`);
+  return rows.length > 0;
+}
+
+/** Give the lease back early (only when `holder` still owns it). */
+export async function releaseLease(db: Db, name: string, holder: string): Promise<void> {
+  await db
+    .update(workerStatus)
+    .set({ info: { holder, until: 0 } })
+    .where(
+      and(
+        eq(workerStatus.name, name),
+        sql`json_extract(${workerStatus.info}, '$.holder') = ${holder}`,
+      ),
+    );
 }

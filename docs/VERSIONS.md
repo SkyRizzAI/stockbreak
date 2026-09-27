@@ -50,7 +50,7 @@ Aturan: pakai versi stabil; RC/beta tidak dipakai. Perubahan versi dicatat di `D
 | @wallet-standard/wallet · @solana/wallet-standard-features | 1.1.1 · 1.5.0 |
 | @solana/actions-spec | 2.4.2 (tipe saja; `@solana/actions` dilarang karena web3.js v1) |
 | drizzle-orm · drizzle-kit | 0.45.3 · 0.31.11 (stabil; 1.0-rc tidak dipakai) |
-| postgres (postgres.js) | 3.4.9 |
+| SQLite | `node:sqlite` bawaan Node 24 / Bun 1.4 (lokal) · Cloudflare D1 (produksi), D051; postgres.js dihapus |
 | @modelcontextprotocol/server · @modelcontextprotocol/client | 2.1.0 |
 | @modelcontextprotocol/inspector | 2.7.0 |
 | @playwright/test | 1.63.0 (Chromium) |

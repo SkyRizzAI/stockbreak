@@ -8,7 +8,13 @@
   "main": "src/cf.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
-  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "cf90210018f14c218bba4408d2445c55" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "stockbreak",
+      "database_id": "18fd9424-b32b-416c-b62d-9c84fc734387"
+    }
+  ],
   "triggers": { "crons": ["* * * * *"] },
   "workers_dev": false,
   "preview_urls": false,
@@ -16,8 +22,8 @@
   "vars": {
     "CLUSTER": "devnet",
     "WEB_URL": "https://stockbreak.fun",
-    // Required by the env schema; @repo/db connects through HYPERDRIVE on Workers.
-    "DATABASE_URL": "postgresql://hyperdrive.invalid/uses-binding",
+    // Required by the env schema; on Workers @repo/db uses the D1 binding `DB` (D051).
+    "DATABASE_URL": "d1:DB",
     "PRICE_MODE": "live"
   }
 }

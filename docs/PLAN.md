@@ -110,7 +110,7 @@ Pilihan di bawah adalah default. Versi pasti ditentukan di analisis A01 dari doc
 | Wallet | **@solana/react** + **@solana/kit-plugin-wallet** (Wallet Standard); fallback bila plugin belum stabil/terdokumentasi: `@solana/react` + `@wallet-standard/react` | Rekomendasi resmi; Phantom/Solflare/Backpack terdeteksi otomatis |
 | Font | **Geist Sans** + **Geist Mono** (`geist` / `next/font`) | Bersih, angka tabular |
 | Validasi | **Zod** | Env, input API, input MCP |
-| DB | **PostgreSQL** (Docker Compose lokal) + **Drizzle ORM** + drizzle-kit, driver **`postgres` (postgres.js)** | Stabil, typed; driver jalan di Bun dan Node (Next.js berjalan di Node, jadi jangan `bun:sql`) |
+| DB | **SQLite** (D051): **Cloudflare D1** di produksi, file lokal `.data/*.db` lewat `node:sqlite` bawaan runtime; **Drizzle ORM** + drizzle-kit (dialek sqlite), adapter driver di `packages/db/src/client.ts` | Satu dialek dan satu kode query untuk semua lingkungan; tanpa Docker dan tanpa modul native. Sebelum D051: PostgreSQL + postgres.js |
 | Worker | Bun (proses panjang) | Indexer, snapshot, keeper, price feeder |
 | MCP | **MCP TypeScript SDK resmi**, versi stabil terbaru (cek di A01 apakah paket server sudah dipisah, mis. `@modelcontextprotocol/server`), transport stdio + Streamable HTTP | SDK resmi |
 | Blinks | Implementasi spesifikasi Solana Actions (JSON + tx base64) di route handler Next.js | Tanpa ketergantungan web3.js v1 |
@@ -128,7 +128,7 @@ Dilarang: `@solana/web3.js` v1, `@solana/wallet-adapter-*`, `@coral-xyz/anchor`,
 
 ```
                     ┌──────────────────────────────┐
- Browser ──────────▶│ apps/web (Next.js)            │── read ──▶ PostgreSQL
+ Browser ──────────▶│ apps/web (Next.js)            │── read ──▶ SQLite (D1)
  (Wallet Standard)  │  UI, API routes, Blinks, OG  │
                     └──────────────┬───────────────┘
  Agent eksternal ──▶ apps/mcp ─────┤ (via packages/sdk + packages/db)
@@ -139,7 +139,7 @@ Dilarang: `@solana/web3.js` v1, `@solana/wallet-adapter-*`, `@coral-xyz/anchor`,
                                    ▲
  apps/worker ──────────────────────┘  indexer · snapshot NAV · keeper · price feeder · XP/badge
         │                              └── baca harga nyata (read-only): Pyth (mainnet), Jupiter Price API
-        └──▶ PostgreSQL
+        └──▶ SQLite (D1)
 ```
 
 Prinsip:
@@ -152,7 +152,7 @@ Prinsip:
 ```
 /
 ├─ CLAUDE.md, README.md          (semua dokumen lain di docs/)
-├─ package.json (workspaces), turbo.json, biome.json, docker-compose.yml, .env.example
+├─ package.json (workspaces), turbo.json, biome.json, .env.example
 ├─ anchor/                    Anchor workspace (Anchor.toml, Cargo.toml)
 │  └─ programs/
 │     ├─ index_vault/
@@ -431,6 +431,7 @@ Zap in: ambil `balance_i` + harga (index kosong: bobot target) → `usdc_i = tot
 - Signer abstrak (Kit `TransactionSigner`) sehingga sama untuk browser wallet, keypair worker, dan agent.
 
 ### 7.3 Database (Drizzle)
+SQLite sejak D051 (Cloudflare D1 / `node:sqlite` lokal): `jsonb` = TEXT JSON, `bool` = INTEGER 0/1, waktu = INTEGER epoch ms, u64 = INTEGER ≤ 2^53−1 (API D1 tanpa BigInt), `id` = INTEGER autoincrement. Nama tabel/kolom dan kunci tidak berubah.
 ```
 users            (wallet PK, handle unique, avatar_seed, bio, is_agent, agent_name, created_at)
 auth_nonces      (nonce PK, wallet, purpose, expires_at, used_at)
@@ -534,7 +535,7 @@ Wallet Standard wallet lokal (keypair di localStorage) yang didaftarkan ke Walle
 **Faucet SOL**: localnet memakai `requestAirdrop`. Devnet tidak bergantung pada airdrop publik (rate limit): route server `POST /api/faucet/sol` mentransfer `FAUCET_SOL_PER_REQUEST` (default 0.2 SOL) dari wallet admin, dibatasi per wallet per 24 jam (tabel `faucet_claims`) dan `FAUCET_SOL_DAILY_CAP`. Hanya aktif untuk cluster devnet/localnet.
 
 ### 7.9 Orkestrasi lokal
-- `bun run setup`: cek prasyarat (bun, rust, avm/anchor, Surfpool atau Solana CLI/Agave untuk `solana-test-validator`, docker) dengan pesan instalasi yang jelas → `bun install` → `bunx playwright install --with-deps chromium` → buat `.keys/` (admin, keeper, agent) → salin `.env.example` ke `.env` bila belum ada → `docker compose up -d` → migrasi DB. Fallback tanpa Docker: Postgres native (`DATABASE_URL` diarahkan ke sana) — dicetak sebagai instruksi.
+- `bun run setup`: cek prasyarat (bun, rust, avm/anchor, Surfpool atau Solana CLI/Agave untuk `solana-test-validator`) dengan pesan instalasi yang jelas → `bun install` → `bunx playwright install --with-deps chromium` → buat `.keys/` (admin, keeper, agent) → salin `.env.example` ke `.env` bila belum ada → migrasi DB SQLite lokal (`.data/app.db`, `app_devnet.db`, `app_test.db`; D051, tanpa Docker).
 - `bun run dev`: satu command menjalankan validator lokal (offline), deploy program, bootstrap (idempoten: market, mint, feed, harga awal, `init_config`, airdrop SOL ke admin/keeper/agent), worker, web, MCP (HTTP) — `scripts/dev.ts` dengan output berlabel per proses, health check tiap layanan, dan shutdown bersih. Flag `--ci` untuk dipakai `verify`.
 - `bun run seed`: buat 3 wallet demo + 1 wallet agent (register), 6–8 index beragam (pre-IPO, clone, follow, agent-managed, dengan AUM besar agar fee terlihat), join, rebalance, dan histori sintetis 30 hari (`synthetic = true`, UI menampilkan label "Simulated history").
 - `bun run price -- --asset <SYMBOL> --pct <+/-N>`: ubah harga secara deterministik (untuk demo & test drift).
@@ -543,7 +544,7 @@ Wallet Standard wallet lokal (keypair di localStorage) yang didaftarkan ke Walle
 - `bun run verify`: lint, typecheck, test program, test TS, build, lalu menyalakan stack sendiri (`scripts/dev.ts --ci`), menjalankan seed + e2e, dan mematikan semuanya.
 - Env: satu `.env` di root. `turbo.json` meneruskan semua var (pass-through/global env), dan `apps/web` memuat `.env` root (mis. `loadEnvConfig` dari `@next/env` di `next.config`).
 
-Port default: web 3000, MCP HTTP 3333, RPC 8899, WS 8900, Postgres **5434** (host; 5432/5433 dipakai project lain milik user).
+Port default: web 3000, MCP HTTP 3333, RPC 8899, WS 8900. Database lokal berupa file SQLite di `.data/` (D051), tanpa port.
 
 Solana CLI di semua script: `-C .keys/solana-cli.yml` (config lokal project, RPC localhost, keypair admin) atau `-u <RPC> -k .keys/<nama>.json` eksplisit. Config global user tidak pernah dipakai/diubah.
 
@@ -815,7 +816,7 @@ Platform index saham tokenized di Solana (localnet/devnet, semua aset simulasi).
 - Komponen UI hanya shadcn/ui (tambah via `shadcn add`).
 
 ## Stack
-Bun + Turborepo + Biome · Anchor (LiteSVM test, Surfpool localnet) · @solana/kit + client Codama · Next.js App Router + Tailwind + shadcn/ui + TanStack Query · @solana/react + kit-plugin-wallet (Wallet Standard) · PostgreSQL + Drizzle (driver postgres.js) · MCP TypeScript SDK · Playwright.
+Bun + Turborepo + Biome · Anchor (LiteSVM test, Surfpool localnet) · @solana/kit + client Codama · Next.js App Router + Tailwind + shadcn/ui + TanStack Query · @solana/react + kit-plugin-wallet (Wallet Standard) · SQLite (Cloudflare D1 / node:sqlite) + Drizzle (D051) · MCP TypeScript SDK · Playwright.
 Dilarang: `@solana/web3.js` v1, `@solana/wallet-adapter-*`, `@coral-xyz/anchor`, `@anchor-lang/core`, `bun:sql` di kode yang dipakai Next.js, library UI lain.
 
 ## Jaringan
@@ -829,7 +830,7 @@ Dilarang: `@solana/web3.js` v1, `@solana/wallet-adapter-*`, `@coral-xyz/anchor`,
 - **Jangan pernah mengubah config global Solana** (`~/.config/solana/**`). Setiap perintah `solana`/`solana-keygen`/`spl-token` wajib memakai `-C .keys/solana-cli.yml` dan/atau `-k .keys/<nama>.json` + `-u <url>` eksplisit. Anchor memakai `[provider]` di `Anchor.toml` atau `--provider.wallet`/`--provider.cluster`.
 - Keypair project: `.keys/admin.json` (deployer, upgrade authority, market authority, pendana faucet SOL devnet), `.keys/keeper.json`, `.keys/agent.json`. Jangan dibuat ulang bila sudah ada.
 - Rust/Anchor/AVM/Agave/Surfpool boleh diubah hanya bila memang diperlukan; catat di `docs/DECISIONS.md` dan `docs/VERSIONS.md`. Jangan menghapus versi/toolchain lain milik user, jangan edit `~/.zshrc`/profil shell.
-- Jangan menghentikan/menghapus container, volume, atau proses milik project lain. Port project: web 3000, MCP 3333, RPC 8899, WS 8900, Postgres 5434.
+- Jangan menghentikan/menghapus container, volume, atau proses milik project lain. Port project: web 3000, MCP 3333, RPC 8899, WS 8900 (database: file SQLite `.data/`, D051).
 
 ## Kontrak
 Kontrak = akun, instruksi, event, error program; skema DB; tool MCP. Beku setelah P2. Mengubahnya:

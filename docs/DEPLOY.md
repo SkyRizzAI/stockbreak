@@ -18,7 +18,9 @@ MCP **remote** ikut web di `https://<web>/api/mcp` (bagian "Remote MCP" di bawah
 
 ---
 
-## Opsi A — Vercel + Neon + worker lokal
+## Opsi A — Vercel + Neon + worker lokal (tidak berlaku lagi sejak D051)
+
+> Database kini SQLite/D1 (D051); Vercel tidak punya binding D1, dan `db:remote`/`vercel:env` sudah dihapus. Bagian ini disimpan sebagai riwayat.
 
 ### A0. Prasyarat (sekali)
 1. Commit & push seluruh perubahan ke GitHub (repo boleh private). File yang **wajib** ikut: `bun.lock`, `apps/web/vercel.json`, `packages/config/deployments/devnet.json` (sudah di-track). `.env*` dan `.keys/` tetap di-gitignore, jangan dipaksa masuk.
@@ -161,33 +163,32 @@ Catatan: laptop dan kedua terminal harus tetap menyala selama penjurian (sampai 
 
 ---
 
-## Opsi C — Cloudflare Workers (web + worker cron, otomatis dari GitHub)
+## Opsi C — Cloudflare Workers + D1 (web + worker cron, otomatis dari GitHub)
 
-Dipakai sejak D050. Dua Worker dari repo `SkyRizzAI/stockbreak`; Workers Builds mem-build dan men-deploy setiap push ke `main`. Tidak butuh laptop menyala. Butuh **Workers Paid** (paket gratis: CPU 10 ms dan 50 subrequest per request, tidak cukup).
+Dipakai sejak D050; database pindah ke **Cloudflare D1** di D051 (Neon Free kehabisan kuota compute karena cron menyala 24 jam). Dua Worker dari repo `SkyRizzAI/stockbreak`; Workers Builds mem-build dan men-deploy setiap push ke `main`. Tidak butuh laptop menyala. Butuh **Workers Paid** (paket gratis: CPU 10 ms, 50 subrequest dan 50 query D1 per invocation, tidak cukup).
 
 | Worker | Root directory | Isi | URL |
 |---|---|---|---|
 | `stockbreak` | `apps/web` | Next.js via OpenNext, `/api/*`, MCP remote `/api/mcp`, Blink, OG | `https://stockbreak.fun` (+ `stockbreak.<subdomain>.workers.dev`) |
-| `stockbreak-worker` | `apps/worker` | `src/cf.ts`: Cron `* * * * *`, loop worker 40 detik per menit | tanpa URL publik |
+| `stockbreak-worker` | `apps/worker` | `src/cf.ts`: Cron `* * * * *`, loop worker 40 detik per menit, satu window pada satu waktu (lease) | tanpa URL publik |
 
-DB: Neon Postgres lewat **Hyperdrive** (binding `HYPERDRIVE`, ID di kedua `wrangler.jsonc`). `wrangler.jsonc` tidak berisi rahasia.
+DB: D1 `stockbreak` (binding `DB`, `database_id` di kedua `wrangler.jsonc`, `migrations_dir` = `packages/db/drizzle`). Tidak ada URL/password database: `wrangler.jsonc` tidak berisi rahasia.
 
 ### C1. Sekali saja
-1. Neon: buat project, salin URL **direct** ke `.env` sebagai `DEVNET_DATABASE_URL`, lalu isi data: `bun run db:remote -- copy` (atau `migrate` untuk DB kosong).
-2. Hyperdrive: dashboard → Storage & databases → Hyperdrive → Create, dengan URL Neon direct. Salin ID ke `hyperdrive[0].id` di `apps/web/wrangler.jsonc` dan `apps/worker/wrangler.jsonc`.
-3. Domain: `stockbreak.fun` harus ada di akun yang sama (`routes[].custom_domain`); DNS dibuat otomatis saat deploy.
+1. D1: dashboard → Storage & databases → D1 → Create database `stockbreak`. Salin ID ke `d1_databases[0].database_id` di `apps/web/wrangler.jsonc` dan `apps/worker/wrangler.jsonc`.
+2. Domain: `stockbreak.fun` harus ada di akun yang sama (`routes[].custom_domain`); DNS dibuat otomatis saat deploy.
+3. Data awal: D1 mulai kosong. Cron pertama mengisi index/posisi/event dari chain (backfill beberapa menit sekali saja), harga mulai dari nol.
 
 ### C2. Hubungkan repo (Workers & Pages → Create → Import a repository), sekali per Worker
 | | `stockbreak` | `stockbreak-worker` |
 |---|---|---|
 | Root directory | `apps/web` | `apps/worker` |
-| Build command | `cd ../.. && bun install --frozen-lockfile && bun run db:remote -- migrate && cd apps/web && bun run cf:build` | `cd ../.. && bun install --frozen-lockfile` |
+| Build command | `cd ../.. && bun install --frozen-lockfile && cd apps/web && bun run cf:migrate && bun run cf:build` | `cd ../.. && bun install --frozen-lockfile` |
 | Deploy command | `bun run cf:deploy` | `bun run cf:deploy` |
-| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1`, `CLUSTER=devnet`, `NEXT_PUBLIC_CLUSTER=devnet`, `NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com`, `NEXT_PUBLIC_WS_URL=wss://api.devnet.solana.com`, `NEXT_PUBLIC_APP_NAME=Stockbreak`, `NEXT_PUBLIC_MCP_URL=https://stockbreak.fun/api/mcp`, `WEB_URL=https://stockbreak.fun`, `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://localhost:5432/unused` | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` |
-| Build secret | `DEVNET_DATABASE_URL` (Neon direct, untuk migrasi) | — |
+| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1`, `CLUSTER=devnet`, `NEXT_PUBLIC_CLUSTER=devnet`, `NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com`, `NEXT_PUBLIC_WS_URL=wss://api.devnet.solana.com`, `NEXT_PUBLIC_APP_NAME=Stockbreak`, `NEXT_PUBLIC_MCP_URL=https://stockbreak.fun/api/mcp`, `WEB_URL=https://stockbreak.fun` | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` |
 | Build watch paths | `apps/web/*`, `apps/mcp/*`, `packages/*`, `bun.lock` | `apps/worker/*`, `apps/mcp/*`, `packages/*`, `bun.lock` |
 
-`NEXT_PUBLIC_*` dan `WEB_URL` di-bake saat `next build`, jadi harus menjadi build variable (nilai di `vars` wrangler hanya untuk runtime). Migrasi (`db:remote -- migrate`) idempoten; bila gagal, build gagal dan versi lama tetap live. `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` hanya placeholder: `opennextjs-cloudflare deploy` membuat emulasi lokal binding Hyperdrive dan menolak jalan tanpa nilai ini (tidak pernah dipakai untuk koneksi).
+`NEXT_PUBLIC_*` dan `WEB_URL` di-bake saat `next build`, jadi harus menjadi build variable (nilai di `vars` wrangler hanya untuk runtime). `cf:migrate` = `wrangler d1 migrations apply stockbreak --remote` (idempoten, tabel `d1_migrations`); bila gagal, build gagal dan versi lama tetap live. Token build butuh izin D1 Edit.
 
 ### C3. Secret runtime (Worker → Settings → Variables and Secrets, tipe Secret)
 | Worker | Secret |
@@ -195,14 +196,16 @@ DB: Neon Postgres lewat **Hyperdrive** (binding `HYPERDRIVE`, ID di kedua `wrang
 | `stockbreak` | `RPC_URL` (Helius devnet), `WS_URL`, `AGENT_KEY_SECRET`; opsional `MCP_AGENT_TOKEN` + `AGENT_KEYPAIR_JSON`, `ADMIN_KEYPAIR_JSON` (faucet SOL, lihat risiko D038) |
 | `stockbreak-worker` | `RPC_URL`, `WS_URL`, `ADMIN_KEYPAIR_JSON`, `KEEPER_KEYPAIR_JSON`, `AGENT_KEY_SECRET`; opsional `JUPITER_API_KEY`, `FINNHUB_API_KEY`, `PYTH_API_KEY`, `MAINNET_READ_RPC_URL`, `AGENT_LLM_API_KEY` (autopilot) |
 
-Nilai `*_KEYPAIR_JSON` = isi `.keys/<nama>.json` (array 64 byte, satu baris). `AGENT_KEY_SECRET` harus sama di web, worker, dan server lain yang memakai DB yang sama. Secret tetap ada di antara deploy.
+Nilai `*_KEYPAIR_JSON` = isi `.keys/<nama>.json` (array 64 byte, satu baris). `AGENT_KEY_SECRET` harus sama di web dan worker (satu D1). Secret tetap ada di antara deploy.
 
 ### C4. Verifikasi dan operasional
 - `bun run check:public -- https://stockbreak.fun` → PASS.
-- Log cron: dashboard `stockbreak-worker` → Observability (baris `[worker] window done`).
-- **Jangan** menjalankan `bun run worker:devnet` / `dev:devnet` bersamaan dengan cron (harga & keeper dobel). Untuk menghentikan cron sementara: Settings → Triggers → hapus cron (push berikutnya memasangnya lagi).
-- Uji lokal runtime Workers: `cd apps/web && bun run cf:preview` (butuh `.dev.vars` + `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=<URL Postgres>`); worker: `cd apps/worker && bunx wrangler dev --test-scheduled` lalu buka `/__scheduled`.
-- Workers Paid berakhir → batas CPU 10 ms: web/cron akan gagal. Perpanjang paket atau kembali ke Opsi A/B.
+- Log cron: dashboard `stockbreak-worker` → Observability (baris `[worker] window done`, atau `previous window still running` bila window sebelumnya masih jalan).
+- Isi D1: dashboard → D1 → `stockbreak` → Console (SQL).
+- **Jangan** menjalankan `bun run worker:devnet` / `dev:devnet` dengan keypair admin/keeper yang sama selama cron aktif (harga & keeper dobel); `dev:devnet -- --no-worker` aman. Untuk menghentikan cron sementara: Settings → Triggers → hapus cron (push berikutnya memasangnya lagi).
+- Uji lokal runtime Workers dengan D1 lokal: `cd apps/web && bunx wrangler d1 migrations apply stockbreak --local && bun run cf:preview` (butuh `.dev.vars`); worker: `cd apps/worker && bunx wrangler dev --test-scheduled` lalu buka `/__scheduled`.
+- Batas D1 (Paid): 100 parameter per query (insert massal dipecah, daftar `IN` lewat `json_each`), 1000 query per invocation, 10 GB per database.
+- Workers Paid berakhir → batas CPU 10 ms dan 50 query D1 per invocation: web/cron akan gagal. Perpanjang paket.
 
 ---
 

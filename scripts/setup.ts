@@ -51,11 +51,6 @@ const prereqs: Prereq[] = [
     expect: /surfpool 1\.(6|[7-9])/,
     install: "surfpool update (or https://surfpool.run)",
   },
-  {
-    name: "docker",
-    cmd: ["docker", "info", "--format", "{{.ServerVersion}}"],
-    install: "Install Docker Desktop or OrbStack and start it",
-  },
 ];
 
 async function checkPrereqs(): Promise<void> {
@@ -166,51 +161,11 @@ function ensureAgentKeySecret(envPath: string): void {
   log(S, "generated AGENT_KEY_SECRET in .env (value not printed)");
 }
 
+/** Local SQLite files in .data/ (D051): localnet, devnet and test databases, migrated. */
 async function ensureDatabase(): Promise<void> {
-  await run(["docker", "compose", "up", "-d", "--wait"]);
-  for (const name of ["app_test", "app_devnet"]) {
-    const exists = await tryOutput([
-      "docker",
-      "compose",
-      "exec",
-      "-T",
-      "postgres",
-      "psql",
-      "-U",
-      "postgres",
-      "-tAc",
-      `SELECT 1 FROM pg_database WHERE datname='${name}'`,
-    ]);
-    if (exists !== "1") {
-      await run(
-        [
-          "docker",
-          "compose",
-          "exec",
-          "-T",
-          "postgres",
-          "psql",
-          "-U",
-          "postgres",
-          "-c",
-          `CREATE DATABASE ${name}`,
-        ],
-        {
-          capture: true,
-        },
-      );
-      log(S, `created database ${name}`);
-    }
-  }
-  if (existsSync(path.join(ROOT, "packages/db/drizzle"))) {
-    await run(["bun", "run", "--cwd", "packages/db", "db:migrate"]);
-    for (const name of ["app_test", "app_devnet"]) {
-      await run(["bun", "run", "--cwd", "packages/db", "db:migrate"], {
-        env: { DATABASE_URL: `postgres://postgres:postgres@localhost:5434/${name}` },
-      });
-    }
-    log(S, "migrations applied (app, app_test, app_devnet)");
-  }
+  // Separate process: this script runs before `bun install` has finished resolving @repo/db.
+  await run(["bun", "scripts/db-migrate.ts"]);
+  log(S, "databases ready (.data/app.db, app_devnet.db, app_test.db)");
 }
 
 async function main(): Promise<void> {
