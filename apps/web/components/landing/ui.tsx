@@ -9,7 +9,7 @@ export const APP_HREF = "/home";
 
 /** Page gutter: 16px on phones, 80px at 1440. */
 export const WRAP = "mx-auto w-full max-w-[1440px] px-4 sm:px-8 lg:px-20";
-export const H2 = "text-[32px] leading-[1.05] font-extrabold tracking-[-0.04em] md:text-[44px]";
+export const H2 = "text-[32px] leading-[1.05] font-medium tracking-[-0.04em] md:text-[44px]";
 export const EYEBROW = "text-sm font-semibold text-muted-foreground";
 export const LEAD = "text-base leading-[1.65] text-muted-foreground";
 /** Stripe order matches the index mark (§8.3). */

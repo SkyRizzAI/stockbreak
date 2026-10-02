@@ -388,3 +388,23 @@ Format: tanggal · konteks · opsi · pilihan · alasan.
 - **Alternatif ditolak:**
   - memperpanjang interval lebih jauh (harga dan aktivitas jadi terasa mati);
   - menyimpan detail index di D1 (perubahan skema/kontrak di hari penjurian).
+
+## D053 — 2026-10-02 — Redesign "Editorial Minimalist" + App UI navbar/dashboard (menggantikan D034)
+- **Konteks:** user memberi referensi `refs/Stockbreak — Editorial Minimalist.html` (11 layar × light/dark) dan meminta dua layout:
+  - *navbar*: menu di atas;
+  - *dashboard*: sidebar, menjadi default.
+
+  Pilihan layout ada di Settings, dan saat pertama berkunjung muncul alert kecil di pojok dengan tombol silang. Tema default mengikuti sistem, dan landing ikut didesain ulang.
+- **Keputusan:**
+  - **Token** netral hangat, warna hanya untuk makna. Light: frame `#f4f3ef`, kartu `#fbfbf9`, garis `#e3e1da`. Dark: frame `#0f0f11`, panel `#141416`, kartu `#19191b`.
+  - **Font:** Instrument Sans (UI), JetBrains Mono (`.num`, `.mono`), Instrument Serif (aksen landing).
+  - **Tombol shadcn** `default`/`outline` memakai gaya taktil referensi (utilitas `btn-tactile*`); komponen tetap shadcn.
+  - **Tema:** `next-themes` (`class`, default `system`, key `stocklana:theme`). Variant `dark` = `.dark`.
+  - **Layout:**
+    - Cookie `sb-layout` dibaca server di `app/(app)/layout.tsx`, sehingga layout pilihan dirender tanpa kedip. Salinannya di `localStorage`.
+    - Shell: `components/shell/app-shell.tsx`. Dashboard memakai shadcn `Sidebar` varian `inset` (search, menu, watchlist, kartu faucet, breadcrumb). Navbar memakai top bar + tab bar di HP.
+    - Alert pertama (`layout-prompt.tsx`): menutupnya berarti tetap dashboard. Alert tidak tampil untuk browser otomatis (`navigator.webdriver`) kecuali `?layout-prompt`.
+  - **Halaman `/settings`:** App UI (Dashboard/Navbar) dan Theme (System/Light/Dark).
+- **Alternatif ditolak:**
+  - layout hanya di `localStorage` (layout berkedip saat load);
+  - dua tema terpisah per layout (referensi kebetulan memasangkan light=navbar dan dark=dashboard, tetapi user meminta keduanya bebas dipasangkan).

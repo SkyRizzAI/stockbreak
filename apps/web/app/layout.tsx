@@ -1,15 +1,22 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Manrope } from "next/font/google";
+import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { APP_NAME } from "@/lib/env";
 import "./globals.css";
 
-// Manrope for text and figures (tabular), IBM Plex Mono for tickers and addresses (refs).
-const manrope = Manrope({ variable: "--font-sans", subsets: ["latin"] });
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+// Instrument Sans for text, JetBrains Mono for figures, tickers and addresses, Instrument
+// Serif for a few editorial accents (refs Editorial Minimalist, D053).
+const sans = Instrument_Sans({ variable: "--font-instrument-sans", subsets: ["latin"] });
+const mono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
+});
+const serif = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {
@@ -29,7 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${manrope.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${sans.variable} ${mono.variable} ${serif.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <Providers>{children}</Providers>

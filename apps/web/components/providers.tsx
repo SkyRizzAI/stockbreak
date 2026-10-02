@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ApiError } from "@/lib/api";
 import { useSessionFollowsWallet } from "@/lib/social";
-import { useThemeInit } from "@/lib/theme";
+import { ThemeProvider } from "@/lib/theme";
 
 function makeClient() {
   return new QueryClient({
@@ -29,16 +29,17 @@ function getQueryClient() {
 
 export function Providers({ children }: { children: ReactNode }) {
   const qc = getQueryClient();
-  useThemeInit();
   return (
-    <QueryClientProvider client={qc}>
-      <SessionGuard />
-      <TooltipProvider>
-        {children}
-        <TxOverlay />
-        <Toaster position="bottom-right" />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={qc}>
+        <SessionGuard />
+        <TooltipProvider>
+          {children}
+          <TxOverlay />
+          <Toaster position="bottom-right" />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 

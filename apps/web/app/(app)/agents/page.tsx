@@ -467,10 +467,10 @@ export default function AgentsPage() {
     queryFn: () => api<AgentRow[]>("/api/agents"),
   });
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-8 md:px-10 xl:px-14">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">AI</h1>
+          <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">AI</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
             AIs that research, prepare and manage indexes. The vault program, not the AI, decides
             what is allowed.

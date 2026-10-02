@@ -21,8 +21,8 @@ export function DesktopNav() {
           key={n.href}
           href={n.href}
           className={cn(
-            "rounded-lg px-3 py-2 text-[15px] font-medium text-muted-foreground transition-colors hover:text-foreground",
-            path.startsWith(n.href) && "bg-raised font-semibold text-foreground",
+            "rounded-[9px] border border-transparent px-3.5 py-1.5 text-[15px] text-fg-2 transition-colors hover:text-foreground",
+            path.startsWith(n.href) && "nav-active font-medium text-foreground",
           )}
         >
           {n.label}

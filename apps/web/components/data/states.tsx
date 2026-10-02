@@ -79,16 +79,25 @@ export function Section({
   action,
   children,
   className,
+  card = false,
 }: {
   title: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Wrap title and content in a bordered card (refs: "Top indexes", "Latest activity"). */
+  card?: boolean;
 }) {
   return (
-    <section className={cn("space-y-3", className)}>
+    <section
+      className={cn(
+        "space-y-3",
+        card && "rounded-[14px] border bg-surface px-5 pt-5 pb-3 md:px-6",
+        className,
+      )}
+    >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-xl font-bold tracking-tight">{title}</h2>
+        <h2 className="text-[19px] font-medium tracking-[-0.02em]">{title}</h2>
         {action}
       </div>
       {children}

@@ -308,7 +308,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
   };
   if (q.isLoading)
     return (
-      <div className="mx-auto grid max-w-[1280px] gap-6 px-4 py-8 md:px-8 lg:grid-cols-[1fr_360px]">
+      <div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-8 md:px-10 xl:px-14 lg:grid-cols-[1fr_360px]">
         <div className="flex flex-col gap-4">
           <Skeleton className="h-16 w-2/3" />
           <Skeleton className="h-72" />
@@ -322,7 +322,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
     (!q.isError && !q.data)
   )
     return (
-      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
         <NotFoundState
           title="Index not found"
           detail="There is no index at this address on this network. Check the link, or browse the indexes that exist."
@@ -331,7 +331,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
         <ErrorState
           message={q.error?.message ?? "Index not found."}
           onRetry={() => void q.refetch()}
@@ -350,7 +350,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
       ]
     : [];
   return (
-    <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-4 py-8 md:px-8 lg:grid-cols-[1fr_360px]">
+    <div className="mx-auto grid w-full max-w-[1440px] gap-8 px-4 py-8 md:px-10 xl:px-14 lg:grid-cols-[1fr_360px]">
       <div className="flex min-w-0 flex-col gap-8">
         <header className="flex flex-col gap-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -412,7 +412,7 @@ export function IndexView({ pubkey }: { pubkey: string }) {
             <div className="flex flex-col">
               <span className="text-xs text-muted-foreground">Share price</span>
               <span
-                className="num text-5xl font-bold tracking-tight md:text-[56px] md:leading-none"
+                className="font-sans text-5xl font-medium tracking-[-0.04em] tabular-nums md:text-[56px] md:leading-none"
                 data-testid="share-price"
               >
                 ${d.sharePriceLive.toFixed(4)}

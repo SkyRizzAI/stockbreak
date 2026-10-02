@@ -86,7 +86,9 @@ function HumanVsAi({ rows }: { rows: IndexSummary[] }) {
     return (
       <div className="flex flex-col gap-2 p-5">
         <span className="text-sm font-semibold">{label} · median 7d</span>
-        <span className={`num text-[40px] leading-none font-bold ${toneOf(m, 0.00005)}`}>
+        <span
+          className={`font-sans text-[40px] leading-none font-medium tracking-[-0.03em] tabular-nums ${toneOf(m, 0.00005)}`}
+        >
           {pct(m)}
         </span>
         <span className="text-[13px] text-muted-foreground">
@@ -120,11 +122,11 @@ export default function Home() {
     .sort((a, b) => (b.ret7d ?? -1) - (a.ret7d ?? -1))
     .slice(0, 4);
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-8 md:px-10 xl:px-14">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Markets</h1>
+            <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">Markets</h1>
             <SimulatedBadge />
           </div>
           <p className="text-sm text-muted-foreground">
@@ -139,6 +141,7 @@ export default function Home() {
       <TickerStrip />
 
       <Section
+        card
         title="Top indexes"
         action={
           <Link href="/explore" className="text-sm text-muted-foreground hover:text-foreground">
@@ -162,7 +165,7 @@ export default function Home() {
       <TopCreators />
 
       <div className="grid gap-8 lg:grid-cols-2">
-        <Section title="Trending clones">
+        <Section card title="Trending clones">
           {list.isLoading ? (
             <RowsSkeleton rows={3} />
           ) : clones.length ? (
@@ -195,13 +198,13 @@ export default function Home() {
           >
             {list.isLoading ? <Skeleton className="h-28" /> : <HumanVsAi rows={rows} />}
           </Section>
-          <Section title="Latest activity">
+          <Section card title="Latest activity">
             {act.isLoading ? (
               <RowsSkeleton rows={4} />
             ) : (act.data ?? []).length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing yet.</p>
             ) : (
-              <ul className="divide-y rounded-2xl border text-sm">
+              <ul className="divide-y text-sm">
                 {(act.data ?? []).slice(0, 6).map((a) => (
                   <li
                     key={`${a.signature}-${a.type}`}

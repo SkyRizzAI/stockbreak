@@ -642,20 +642,20 @@ export function ManageView({ pubkey }: { pubkey: string }) {
   const [thesis, setThesis] = useState<string | null>(null);
   if (q.isLoading)
     return (
-      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
         <RowsSkeleton rows={6} />
       </div>
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
         <ErrorState message="Index not found." onRetry={() => void q.refetch()} />
       </div>
     );
   const d = q.data;
   if (!w.address)
     return (
-      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10 md:px-8">
+      <div className="mx-auto flex max-w-[1440px] flex-col items-start gap-3 px-4 py-10 md:px-10 xl:px-14">
         <p className="text-sm text-muted-foreground">
           Connect the creator wallet to manage {d.name}.
         </p>
@@ -664,7 +664,7 @@ export function ManageView({ pubkey }: { pubkey: string }) {
     );
   if (w.address !== d.creator)
     return (
-      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10 md:px-8">
+      <div className="mx-auto flex max-w-[1440px] flex-col items-start gap-3 px-4 py-10 md:px-10 xl:px-14">
         <p className="text-sm text-muted-foreground">Only the creator can manage this index.</p>
         <Link href={`/i/${d.pubkey}`} className="text-sm underline">
           Back to {d.name}
@@ -674,7 +674,7 @@ export function ManageView({ pubkey }: { pubkey: string }) {
   const owed = Number(d.owed.creator) / 1e6;
   const signer = w.signer as NonNullable<typeof w.signer>;
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-8 md:px-10 xl:px-14">
       <div className="flex flex-col gap-1">
         <Link
           href={`/i/${d.pubkey}`}
@@ -682,7 +682,7 @@ export function ManageView({ pubkey }: { pubkey: string }) {
         >
           ← {d.name}
         </Link>
-        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Manage</h1>
+        <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">Manage</h1>
       </div>
 
       <Section title="Creator fees">

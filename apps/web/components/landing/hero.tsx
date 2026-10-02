@@ -101,7 +101,7 @@ function HeroCard() {
         <span
           key={live.n}
           className={cn(
-            "num text-[40px] font-extrabold tracking-[-0.04em] sm:text-5xl",
+            "num text-[40px] font-semibold tracking-[-0.04em] sm:text-5xl",
             live.dir > 0 && "lp-flash-up",
             live.dir < 0 && "lp-flash-down",
           )}
@@ -260,7 +260,7 @@ export function Hero() {
           <span className="lp-enter text-sm font-semibold text-muted-foreground">
             The index launchpad for tokenized stocks, on Solana
           </span>
-          <h1 className="mt-5 text-[42px] leading-[1.02] font-extrabold tracking-[-0.045em] sm:text-[56px] xl:text-[64px]">
+          <h1 className="mt-5 text-[42px] leading-[1.02] font-semibold tracking-[-0.045em] sm:text-[56px] xl:text-[64px]">
             {words.map((w, i) => (
               <span key={w}>
                 <span className="lp-word" style={{ "--i": i } as CSSProperties}>

@@ -257,8 +257,7 @@ function Inner() {
       <>
         <Button
           size="lg"
-          variant="outline"
-          className="h-10 gap-2 px-3"
+          className="h-[38px] gap-2 px-4"
           onClick={() => setOpen(true)}
           data-testid="connect-wallet"
         >

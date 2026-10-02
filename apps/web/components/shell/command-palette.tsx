@@ -24,7 +24,8 @@ interface SearchResult {
   creators: { wallet: string; handle: string | null; isAgent: boolean }[];
 }
 
-export function CommandPalette() {
+/** Search (⌘K). `bar`: a field in the top bar; `sidebar`: full width in the dashboard sidebar. */
+export function CommandPalette({ variant = "bar" }: { variant?: "bar" | "sidebar" }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const router = useRouter();
@@ -50,27 +51,32 @@ export function CommandPalette() {
   };
   return (
     <>
-      <Button
-        variant="outline"
-        size="lg"
-        className="hidden h-10 w-44 justify-between px-3 text-muted-foreground lg:flex"
+      <button
+        type="button"
         onClick={() => setOpen(true)}
+        className={
+          variant === "sidebar"
+            ? "flex h-10 w-full items-center justify-between rounded-[10px] border bg-raised px-3 text-sm text-muted-foreground shadow-[inset_0_1px_2px_rgb(0_0_0/0.04)] transition-colors hover:text-foreground"
+            : "hidden h-[38px] w-60 items-center justify-between rounded-[9px] border border-hairline bg-raised px-3 text-sm text-muted-foreground shadow-[inset_0_1px_2px_rgb(0_0_0/0.04)] transition-colors hover:text-foreground lg:flex"
+        }
       >
         <span className="inline-flex items-center gap-2">
           <Search className="size-4" />
           Search
         </span>
         <Kbd>⌘K</Kbd>
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-lg"
-        className="lg:hidden"
-        aria-label="Search"
-        onClick={() => setOpen(true)}
-      >
-        <Search />
-      </Button>
+      </button>
+      {variant === "bar" ? (
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          className="lg:hidden"
+          aria-label="Search"
+          onClick={() => setOpen(true)}
+        >
+          <Search />
+        </Button>
+      ) : null}
       <CommandDialog
         open={open}
         onOpenChange={setOpen}

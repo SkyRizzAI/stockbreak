@@ -213,6 +213,8 @@
   }
 }
 .lp-glow {
+  /* Editorial Minimalist (D053): a plain ground, no glow. */
+  display: none;
   pointer-events: none;
   position: absolute;
   border-radius: 9999px;

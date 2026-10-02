@@ -7,9 +7,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary font-semibold text-primary-foreground hover:bg-primary/85",
+        // Tactile controls (refs Editorial Minimalist, D053): gradient, edge and a 2px base.
+        default: "btn-tactile-primary font-medium hover:brightness-110",
         outline:
-          "border-border bg-surface hover:bg-raised hover:text-foreground aria-expanded:bg-raised aria-expanded:text-foreground",
+          "btn-tactile hover:brightness-[1.03] aria-expanded:brightness-[1.03] dark:hover:brightness-110",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
@@ -32,10 +33,11 @@ const buttonVariants = cva(
         "icon-lg": "size-9",
       },
     },
-    // Only the primary action is a pill (refs: radius 6/8/10/16, pill for the one primary action).
     compoundVariants: [
-      { variant: "default", class: "rounded-full px-4" },
+      { variant: "default", class: "rounded-[10px] px-4" },
+      { variant: "outline", class: "rounded-[9px]" },
       { variant: "default", size: "lg", class: "h-10 px-5 text-[15px]" },
+      { variant: "outline", size: "lg", class: "h-10 px-4" },
     ],
     defaultVariants: {
       variant: "default",

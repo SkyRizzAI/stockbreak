@@ -222,7 +222,7 @@ export function CreateWizard() {
 
 function WizardSkeleton() {
   return (
-    <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+    <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
       <Skeleton className="h-96" />
     </div>
   );
@@ -596,7 +596,7 @@ function Wizard() {
 
   if (cloneOf && parent.isError)
     return (
-      <div className="mx-auto flex max-w-[1280px] flex-col gap-3 px-4 py-10 md:px-8">
+      <div className="mx-auto flex max-w-[1440px] flex-col gap-3 px-4 py-10 md:px-10 xl:px-14">
         <div
           role="alert"
           className="flex flex-col items-start gap-2 rounded-2xl border px-4 py-8 md:px-8"
@@ -713,9 +713,11 @@ function Wizard() {
 
   if (created && failed && failed !== "create")
     return (
-      <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-4 py-8 md:px-8 lg:grid-cols-[1fr_340px]">
+      <div className="mx-auto grid w-full max-w-[1440px] gap-8 px-4 py-8 md:px-10 xl:px-14 lg:grid-cols-[1fr_340px]">
         <div className="flex min-w-0 flex-col gap-6">
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{name.trim()}</h1>
+          <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">
+            {name.trim()}
+          </h1>
           <div className="flex flex-col gap-4 rounded-2xl border p-4" data-testid="create-recovery">
             <div className="flex flex-col gap-1">
               <p className="flex items-center gap-2 font-medium">
@@ -780,10 +782,10 @@ function Wizard() {
     ) : null;
 
   return (
-    <div className="mx-auto grid w-full max-w-[1280px] gap-8 px-4 py-8 md:px-8 lg:grid-cols-[1fr_340px]">
+    <div className="mx-auto grid w-full max-w-[1440px] gap-8 px-4 py-8 md:px-10 xl:px-14 lg:grid-cols-[1fr_340px]">
       <div className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
+          <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">
             {cloneOf ? `Clone ${parent.data?.name ?? "index"}` : "Create index"}
           </h1>
           <p className="text-sm text-muted-foreground">

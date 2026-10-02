@@ -64,11 +64,11 @@ export function ExploreView() {
   const list = useIndexes(qs.toString());
   const items = list.data?.items ?? [];
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-5 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-8 md:px-10 xl:px-14">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Explore</h1>
+            <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">Explore</h1>
             <SimulatedBadge />
           </div>
           <p className="text-sm text-muted-foreground">

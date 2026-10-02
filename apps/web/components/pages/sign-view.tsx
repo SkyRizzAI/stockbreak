@@ -196,7 +196,7 @@ export function SignView() {
   const [error, setError] = useState<string | null>(null);
   if (!id)
     return (
-      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
         <NotFoundState
           title="No request to sign"
           detail="This page opens a transaction request prepared by an AI agent. Ask the agent for its sign link."
@@ -207,13 +207,13 @@ export function SignView() {
     );
   if (q.isLoading)
     return (
-      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
         <Skeleton className="h-64" />
       </div>
     );
   if (q.isError || !q.data)
     return (
-      <div className="mx-auto max-w-[1280px] px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-[1440px] px-4 py-8 md:px-10 xl:px-14">
         <NotFoundState
           title="Request not found"
           detail="This sign link is invalid or was removed. Ask your agent to prepare the request again."
@@ -320,11 +320,14 @@ export function SignView() {
     }
   };
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-8 md:px-10 xl:px-14">
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted-foreground">Requested by {it.createdBy}</span>
         <div className="flex items-center gap-2">
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl" data-testid="intent-title">
+          <h1
+            className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]"
+            data-testid="intent-title"
+          >
             {d.title}
           </h1>
           <SimulatedBadge />

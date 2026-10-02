@@ -41,7 +41,7 @@ function FeeCalculator() {
         className="py-2"
       />
       <span className="flex flex-wrap items-baseline gap-2.5">
-        <span className="num text-[32px] font-extrabold tracking-[-0.03em]">
+        <span className="num text-[32px] font-semibold tracking-[-0.03em]">
           ${Math.round(earn).toLocaleString("en-US")}
         </span>
         <span className="text-sm text-muted-foreground">per year for every $10k of AUM</span>
@@ -329,7 +329,8 @@ export function Agents() {
         <div className="flex flex-col gap-5">
           <span className={cn(EYEBROW, "lp-rv")}>AI agents · MCP</span>
           <h2 className={cn(H2, "lp-rv")} style={rv(1)}>
-            Let an AI manage the index. It still can&apos;t touch the money.
+            Let an AI manage the index.{" "}
+            <span className="text-muted-foreground">It still can&apos;t touch the money.</span>
           </h2>
         </div>
         <div className="flex flex-col gap-4">

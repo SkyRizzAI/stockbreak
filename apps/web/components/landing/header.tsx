@@ -87,7 +87,7 @@ export function LandingHeader() {
         <div className="flex items-center gap-11">
           <Link
             href="/"
-            className="flex items-center gap-2.5 text-[19px] font-extrabold tracking-[-0.02em]"
+            className="flex items-center gap-2.5 text-[19px] font-semibold tracking-[-0.02em]"
           >
             <LogoMark />
             {APP_NAME}

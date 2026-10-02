@@ -97,6 +97,13 @@ Legenda: `[ ]` belum · `[~]` berjalan · `[x]` selesai · `BLOCKED(eksternal): 
   - Web: retry 429 cukup 1×, detail index cache 15 dtk + data valid terakhir saat RPC gagal (memori + `caches.default`), RPC sibuk menjadi 503 dengan pesan jelas.
   - Gate: `bun run verify` ALL GREEN (107 e2e). Uji manual: dengan kunci habis, detail index 503 dalam ±1 dtk (sebelumnya 18 dtk/500); dengan RPC publik, 200 dalam 0,8 dtk lalu ±5 ms (cache).
   - Belum ter-deploy: perlu commit/push dan penggantian secret `RPC_URL`/`WS_URL` di kedua Worker Cloudflare.
+- 2026-10-02: P14 redesign "Editorial Minimalist" (D053, `docs/plans/P14-redesign.md`).
+  - Token light/dark netral hangat; font Instrument Sans / JetBrains Mono / Instrument Serif; tombol shadcn taktil.
+  - Tema `next-themes` (System default).
+  - Layout **Dashboard** (default; shadcn Sidebar inset: search, menu, watchlist, kartu faucet, breadcrumb) atau **Navbar**, disimpan di cookie `sb-layout`. Ada alert pilihan saat kunjungan pertama, dan halaman `/settings` (App UI + Theme).
+  - Judul halaman dan landing dibuat lebih ringan dengan aksen serif; glow dihapus; lebar konten 1440.
+  - Bug yang ditemukan dan diperbaiki: dua `<main>` di layout dashboard (shadcn `SidebarInset` → `div`) dan halaman meluber di 1280 px (`min-w-0`).
+  - Gate: lint/typecheck hijau. Run e2e penuh: 66 lulus, 44 `pages` gagal karena dua `<main>`. Setelah perbaikan, rerun `pages` + `app-ui` (baru) + `flows`: 59/59 lulus.
 
 ## Ringkasan akhir (2026-09-24)
 **Yang jadi**: dua program Anchor (`index_vault`, `mock_market`) + 38 test LiteSVM; SDK kit/Codama (zap, rebalance sandwich, ALT, IPO, humanisasi error, paritas math); worker (harga live Jupiter/Finnhub → oracle, indexer, snapshot, keeper, fee, follow, gamifikasi); web Next.js (explore, index, create/clone/follow wizard, manage, portfolio, leaderboard, profil, faucet, agents, sign, Blink, OG); MCP server (18 tool, stdio + HTTP); e2e Playwright (DoD §11.1 otomatis); deploy devnet.

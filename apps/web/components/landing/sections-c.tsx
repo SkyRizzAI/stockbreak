@@ -272,7 +272,7 @@ export function Tests() {
               <CountUp
                 value={v}
                 duration={1600}
-                className="text-[44px] leading-none font-extrabold tracking-[-0.04em] md:text-[56px]"
+                className="text-[44px] leading-none font-semibold tracking-[-0.04em] md:text-[56px]"
               />
               <span className="text-sm leading-[1.5] text-muted-foreground">{l}</span>
             </span>
@@ -455,8 +455,9 @@ export function FinalCta() {
       <div className="lp-rv relative grid items-center gap-12 overflow-hidden rounded-2xl border bg-surface p-8 md:grid-cols-[minmax(0,1fr)_240px] md:gap-16 md:p-16">
         <div aria-hidden className="lp-glow -top-24 -right-24 h-[360px] w-[420px]" />
         <div className="relative flex flex-col gap-[18px]">
-          <h2 className="text-[36px] leading-[1.02] font-extrabold tracking-[-0.045em] md:text-[56px]">
-            Your thesis deserves a ticker.
+          <h2 className="text-[36px] leading-[1.02] font-semibold tracking-[-0.045em] md:text-[56px]">
+            Your thesis deserves a{" "}
+            <span className="font-serif font-normal italic tracking-normal">ticker.</span>
           </h2>
           <p className="text-[17px] text-muted-foreground">
             Create an index in minutes. Share it anywhere. Let the program keep it honest.
@@ -490,7 +491,7 @@ export function LandingFooter() {
     <footer className={cn(WRAP, "mt-24")}>
       <div className="grid gap-10 border-t pt-10 pb-14 text-[13px] text-muted-foreground sm:grid-cols-2 lg:grid-cols-[4fr_2fr_2fr_3fr]">
         <div className="flex flex-col gap-2.5">
-          <span className="flex items-center gap-2.5 text-[17px] font-extrabold text-foreground">
+          <span className="flex items-center gap-2.5 text-[17px] font-semibold text-foreground">
             <LogoMark size={24} />
             {APP_NAME}
           </span>

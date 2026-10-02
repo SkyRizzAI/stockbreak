@@ -35,7 +35,7 @@ export function MarketStrip() {
               decimals={m.dec ?? 0}
               prefix={m.prefix}
               suffix={m.suffix}
-              className="text-[28px] font-extrabold tracking-[-0.03em] md:text-4xl"
+              className="text-[28px] font-semibold tracking-[-0.03em] md:text-4xl"
             />
             <span className="text-[13px] text-muted-foreground">{m.l}</span>
           </span>
@@ -90,7 +90,8 @@ export function Problem() {
   return (
     <Reveal className={cn(WRAP, "flex flex-col gap-14 pt-28 md:pt-36")}>
       <h2 className={cn(H2, "lp-rv max-w-[820px] md:text-5xl")}>
-        Tokenized stocks are here. Portfolios aren&apos;t.
+        Tokenized stocks are here.{" "}
+        <span className="text-muted-foreground">Portfolios aren&apos;t.</span>
       </h2>
       <div className="grid gap-10 md:grid-cols-3 md:gap-12">
         {PROBLEMS.map((p, i) => (
@@ -373,7 +374,9 @@ export function HowItWorks() {
   return (
     <Reveal id="how" className={cn(WRAP, "flex scroll-mt-20 flex-col gap-10 pt-32 md:pt-40")}>
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h2 className={cn(H2, "lp-rv md:text-5xl")}>From thesis to token in four steps.</h2>
+        <h2 className={cn(H2, "lp-rv md:text-5xl")}>
+          From thesis to token <span className="text-muted-foreground">in four steps.</span>
+        </h2>
         <span className="lp-rv text-base text-muted-foreground" style={rv(1)}>
           No fund, no paperwork. Just a wallet.
         </span>
@@ -766,10 +769,11 @@ export function PreIpo() {
           <div className="flex flex-col gap-5">
             <span className={cn(EYEBROW, "lp-rv")}>Pre-IPO · powered by PreStocks data</span>
             <h2
-              className="lp-rv text-[36px] leading-[1.02] font-extrabold tracking-[-0.045em] md:text-[56px]"
+              className="lp-rv text-[36px] leading-[1.02] font-semibold tracking-[-0.045em] md:text-[56px]"
               style={rv(1)}
             >
-              Hold SpaceX before the IPO. Never miss the conversion.
+              Hold SpaceX before the IPO.{" "}
+              <span className="text-muted-foreground">Never miss the conversion.</span>
             </h2>
           </div>
           <p className={cn(LEAD, "lp-rv")} style={rv(2)}>

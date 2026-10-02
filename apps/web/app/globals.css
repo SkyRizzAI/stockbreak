@@ -2,19 +2,16 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Dark green is the default look (refs/Stocklana.html); `.light` opts into the light variant. */
-@custom-variant dark {
-  &:where(:root:not(.light), :root:not(.light) *) {
-    @slot;
-  }
-}
+/* Light is the base; `.dark` on <html> (next-themes, D053) switches to the dark tokens. */
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-plex-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-instrument-sans);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-heading: var(--font-instrument-sans);
+  --font-serif: var(--font-instrument-serif);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -44,18 +41,23 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* Tags 6 · marks 8 · controls 10 · cards 16 (refs Base design). */
+  /* Tags 6 · controls 9-10 · cards 12-14 (refs Editorial Minimalist, D053). */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  --radius-xl: 16px;
-  --radius-2xl: 16px;
-  --radius-3xl: 20px;
-  --radius-4xl: 24px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 18px;
+  --radius-4xl: 22px;
   --color-up: var(--up);
   --color-down: var(--down);
   --color-warn: var(--warn);
   --color-surface: var(--surface);
+  --color-frame: var(--frame);
+  --color-panel: var(--panel);
+  --color-fg-2: var(--fg-2);
+  --color-up-bg: var(--up-bg);
+  --color-down-bg: var(--down-bg);
   --color-raised: var(--raised);
   --color-hairline: var(--hairline);
   --color-mark-1: var(--mark-1);
@@ -64,113 +66,153 @@
   --color-mark-4: var(--mark-4);
 }
 
-/* Ground #06140E · Surface #0B1C15 · Raised #12271E · Line #1C3329 · Muted #9BB3A7 · Text #E8F3EC.
-   Mint #4BF0A9 only for the primary action, the logo and positive returns; coral/amber are data. */
+/* Editorial Minimalist (refs/Stockbreak — Editorial Minimalist.html, D053): warm neutrals,
+   colour only for meaning (up/down/warn) and allocation marks. Light is the base. */
 :root {
-  --background: #06140e;
-  --foreground: #e8f3ec;
-  --surface: #0b1c15;
-  --raised: #12271e;
-  --hairline: #15291f;
-  --card: #0b1c15;
-  --card-foreground: #e8f3ec;
-  --popover: #0b1c15;
-  --popover-foreground: #e8f3ec;
-  --primary: #4bf0a9;
-  --primary-foreground: #03140c;
-  --secondary: #12271e;
-  --secondary-foreground: #e8f3ec;
-  --muted: #12271e;
-  --muted-foreground: #9bb3a7;
-  --accent: #12271e;
-  --accent-foreground: #e8f3ec;
-  --destructive: #ff8a7a;
-  --border: #1c3329;
-  --input: #1c3329;
-  --ring: #2a7a5c;
-  --up: #4bf0a9;
-  --down: #ff8a7a;
-  --warn: #f4c65a;
-  --mark-1: #d6f5e6;
-  --mark-2: #8fddb8;
-  --mark-3: #4fb58a;
-  --mark-4: #2a7a5c;
+  --frame: #f4f3ef;
+  --panel: #f4f3ef;
+  --background: #f4f3ef;
+  --foreground: #1f1f1d;
+  --fg-2: #4d4c48;
+  --surface: #fbfbf9;
+  --raised: #f7f6f2;
+  --hairline: #ecebe5;
+  --card: #fbfbf9;
+  --card-foreground: #1f1f1d;
+  --popover: #fbfbf9;
+  --popover-foreground: #1f1f1d;
+  --primary: #2b2b28;
+  --primary-foreground: #ffffff;
+  --secondary: #f7f6f2;
+  --secondary-foreground: #1f1f1d;
+  --muted: #ecebe5;
+  --muted-foreground: #7a7974;
+  --accent: #ecebe5;
+  --accent-foreground: #1f1f1d;
+  --destructive: #b9442d;
+  --border: #e3e1da;
+  --input: #e3e1da;
+  --ring: #a09f99;
+  --up: #2f8a43;
+  --up-bg: #eaf5ec;
+  --down: #b9442d;
+  --down-bg: #fbecea;
+  --warn: #b8730f;
+  --mark-1: #5bb26a;
+  --mark-2: #3b6fd6;
+  --mark-3: #e39a3c;
+  --mark-4: #8cc63f;
   /* Text on each mark tone (index cards). */
-  --mark-ink-1: #03140c;
-  --mark-ink-2: #03140c;
-  --mark-ink-3: #03140c;
-  --mark-ink-4: #e8f3ec;
-  --chart-1: #8fddb8;
-  --chart-2: #4fb58a;
-  --chart-3: #2a7a5c;
-  --chart-4: #1c3329;
-  --chart-5: #9bb3a7;
-  --glass-bar: rgb(6 20 14 / 0.62);
-  --glass-panel: rgb(18 39 30 / 0.62);
-  --glass-edge: rgb(255 255 255 / 0.09);
+  --mark-ink-1: #ffffff;
+  --mark-ink-2: #ffffff;
+  --mark-ink-3: #1f1f1d;
+  --mark-ink-4: #1f1f1d;
+  --chart-1: #5bb26a;
+  --chart-2: #3b6fd6;
+  --chart-3: #e39a3c;
+  --chart-4: #8cc63f;
+  --chart-5: #7a7974;
+  --glass-bar: rgb(244 243 239 / 0.82);
+  --glass-panel: rgb(251 251 249 / 0.86);
+  --glass-edge: rgb(31 31 29 / 0.08);
   --radius: 10px;
-  --sidebar: #0b1c15;
-  --sidebar-foreground: #e8f3ec;
-  --sidebar-primary: #4bf0a9;
-  --sidebar-primary-foreground: #03140c;
-  --sidebar-accent: #12271e;
-  --sidebar-accent-foreground: #e8f3ec;
-  --sidebar-border: #1c3329;
-  --sidebar-ring: #2a7a5c;
-  color-scheme: dark;
+  /* Tactile buttons. */
+  --btn-primary-bg: linear-gradient(180deg, #4a4a46 0%, #2b2b28 100%);
+  --btn-primary-border: #141412;
+  --btn-primary-fg: #ffffff;
+  --btn-primary-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.24), inset 0 -2px 0 rgb(0 0 0 / 0.3), 0 2px 0 #0d0d0c,
+    0 3px 3px rgb(0 0 0 / 0.16);
+  --btn-bg: linear-gradient(180deg, #ffffff 0%, #f1f0ec 100%);
+  --btn-border: #d2d0c7;
+  --btn-fg: #1f1f1d;
+  --btn-shadow:
+    inset 0 1px 0 #ffffff, inset 0 -2px 0 rgb(0 0 0 / 0.045), 0 2px 0 #cfcdc3,
+    0 3px 3px rgb(0 0 0 / 0.07);
+  --nav-active-bg: linear-gradient(180deg, #ffffff, #f1f0ec);
+  --nav-active-border: #d2d0c7;
+  --nav-active-shadow: inset 0 1px 0 #ffffff, inset 0 -2px 0 rgb(0 0 0 / 0.04), 0 1px 0 #d9d7ce;
+  --sidebar: #f4f3ef;
+  --sidebar-foreground: #4d4c48;
+  --sidebar-primary: #2b2b28;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ecebe5;
+  --sidebar-accent-foreground: #1f1f1d;
+  --sidebar-border: #e3e1da;
+  --sidebar-ring: #a09f99;
+  color-scheme: light;
 }
 
-/* Light variant: the same green family on a pale ground; data colours darkened for contrast. */
-:root.light {
-  --background: #f4f8f5;
-  --foreground: #0b1c15;
-  --surface: #ffffff;
-  --raised: #e6efe9;
-  --hairline: #e3ece6;
-  --card: #ffffff;
-  --card-foreground: #0b1c15;
-  --popover: #ffffff;
-  --popover-foreground: #0b1c15;
-  --primary: #4bf0a9;
-  --primary-foreground: #03140c;
-  --secondary: #e6efe9;
-  --secondary-foreground: #0b1c15;
-  --muted: #e6efe9;
-  --muted-foreground: #4a6457;
-  --accent: #e6efe9;
-  --accent-foreground: #0b1c15;
-  --destructive: #d24c3f;
-  --border: #d3e2d9;
-  --input: #d3e2d9;
-  --ring: #4fb58a;
-  --up: #0b8f58;
-  --down: #d24c3f;
-  --warn: #a8700f;
-  --mark-1: #1e6b4e;
-  --mark-2: #3f9e74;
-  --mark-3: #7fcfa8;
-  --mark-4: #c6eedb;
-  --mark-ink-1: #f4f8f5;
-  --mark-ink-2: #f4f8f5;
-  --mark-ink-3: #03140c;
-  --mark-ink-4: #03140c;
-  --chart-1: #3f9e74;
-  --chart-2: #7fcfa8;
-  --chart-3: #1e6b4e;
-  --chart-4: #d3e2d9;
-  --chart-5: #4a6457;
-  --glass-bar: rgb(244 248 245 / 0.62);
-  --glass-panel: rgb(255 255 255 / 0.7);
-  --glass-edge: rgb(11 28 21 / 0.08);
-  --sidebar: #ffffff;
-  --sidebar-foreground: #0b1c15;
-  --sidebar-primary: #4bf0a9;
-  --sidebar-primary-foreground: #03140c;
-  --sidebar-accent: #e6efe9;
-  --sidebar-accent-foreground: #0b1c15;
-  --sidebar-border: #d3e2d9;
-  --sidebar-ring: #4fb58a;
-  color-scheme: light;
+.dark {
+  --frame: #0f0f11;
+  --panel: #141416;
+  --background: #141416;
+  --foreground: #ececee;
+  --fg-2: #b6b6bc;
+  --surface: #19191b;
+  --raised: #17171a;
+  --hairline: #232326;
+  --card: #19191b;
+  --card-foreground: #ececee;
+  --popover: #19191b;
+  --popover-foreground: #ececee;
+  --primary: #f4f4f6;
+  --primary-foreground: #121214;
+  --secondary: #1f1f22;
+  --secondary-foreground: #ececee;
+  --muted: #1f1f22;
+  --muted-foreground: #85858c;
+  --accent: #232326;
+  --accent-foreground: #ececee;
+  --destructive: #ff7388;
+  --border: #2a2a2e;
+  --input: #2a2a2e;
+  --ring: #5f5f66;
+  --up: #45d79a;
+  --up-bg: rgb(69 215 154 / 0.1);
+  --down: #ff7388;
+  --down-bg: rgb(255 115 136 / 0.1);
+  --warn: #e8a64a;
+  --mark-1: #3ecf8e;
+  --mark-2: #5b8cff;
+  --mark-3: #e8a64a;
+  --mark-4: #b48cff;
+  --mark-ink-1: #0b0b0d;
+  --mark-ink-2: #0b0b0d;
+  --mark-ink-3: #0b0b0d;
+  --mark-ink-4: #0b0b0d;
+  --chart-1: #3ecf8e;
+  --chart-2: #5b8cff;
+  --chart-3: #e8a64a;
+  --chart-4: #b48cff;
+  --chart-5: #85858c;
+  --glass-bar: rgb(20 20 22 / 0.82);
+  --glass-panel: rgb(25 25 27 / 0.86);
+  --glass-edge: rgb(255 255 255 / 0.08);
+  --btn-primary-bg: linear-gradient(180deg, #ffffff 0%, #e3e3e6 100%);
+  --btn-primary-border: #ffffff;
+  --btn-primary-fg: #121214;
+  --btn-primary-shadow:
+    inset 0 -2px 0 rgb(0 0 0 / 0.14), 0 2px 0 #7d7d84, 0 3px 3px rgb(0 0 0 / 0.4);
+  --btn-bg: linear-gradient(180deg, #37373d 0%, #27272b 100%);
+  --btn-border: #3f3f45;
+  --btn-fg: #ececee;
+  --btn-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 -2px 0 rgb(0 0 0 / 0.3), 0 2px 0 #060607,
+    0 3px 3px rgb(0 0 0 / 0.35);
+  --nav-active-bg: linear-gradient(180deg, #2b2b2f, #222225);
+  --nav-active-border: #323236;
+  --nav-active-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 -2px 0 rgb(0 0 0 / 0.3), 0 2px 0 #060607;
+  --sidebar: #0f0f11;
+  --sidebar-foreground: #b6b6bc;
+  --sidebar-primary: #f4f4f6;
+  --sidebar-primary-foreground: #121214;
+  --sidebar-accent: #1f1f22;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2a2a2e;
+  --sidebar-ring: #5f5f66;
+  color-scheme: dark;
 }
 
 @layer base {
@@ -187,15 +229,37 @@
   .grid > * {
     min-width: 0;
   }
-  /* Figures: Manrope with tabular digits so prices line up. */
+  /* Figures: JetBrains Mono, tabular, so prices line up (refs D053). Hero-size figures opt
+     back into the sans face with `font-sans`. */
   .num {
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
   }
   /* Tickers and wallet addresses only: every character must be told apart. */
   .mono {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Tactile controls (refs): a soft gradient, a 1px edge and a 2px "base" shadow. */
+@utility btn-tactile {
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  color: var(--btn-fg);
+  box-shadow: var(--btn-shadow);
+}
+@utility btn-tactile-primary {
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-fg);
+  box-shadow: var(--btn-primary-shadow);
+}
+@utility nav-active {
+  background: var(--nav-active-bg);
+  border-color: var(--nav-active-border);
+  box-shadow: var(--nav-active-shadow);
 }
 
 /* Glass: two places only — the top bar and the Join/Redeem panel (refs "Dose limits"). */

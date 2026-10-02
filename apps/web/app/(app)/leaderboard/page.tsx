@@ -68,7 +68,10 @@ function Podium({
               </span>
               <span className="flex items-end justify-between gap-3">
                 <span className="flex flex-col gap-1">
-                  <Delta value={ret} className="text-[40px] leading-none font-bold" />
+                  <Delta
+                    value={ret}
+                    className="font-sans text-[40px] leading-none font-medium tracking-[-0.03em]"
+                  />
                   {vs !== null ? (
                     <span className="num text-[13px] text-muted-foreground">
                       {vs >= 0 ? "+" : ""}
@@ -116,9 +119,9 @@ export default function LeaderboardPage() {
     </ToggleGroup>
   );
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-8 md:px-10 xl:px-14">
       <div className="flex items-center gap-2">
-        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Leaderboard</h1>
+        <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">Leaderboard</h1>
         <SimulatedBadge />
       </div>
       <Tabs value={tab} onValueChange={(v) => setTab(v as string)}>

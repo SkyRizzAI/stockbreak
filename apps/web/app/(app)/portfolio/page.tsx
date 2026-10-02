@@ -36,8 +36,8 @@ export default function PortfolioPage() {
   const { run, busy } = useRun();
   if (!w.address)
     return (
-      <div className="mx-auto flex max-w-[1280px] flex-col items-start gap-3 px-4 py-10 md:px-8">
-        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Portfolio</h1>
+      <div className="mx-auto flex max-w-[1440px] flex-col items-start gap-3 px-4 py-10 md:px-10 xl:px-14">
+        <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">Portfolio</h1>
         <p className="text-sm text-muted-foreground">
           Connect a wallet to see your positions and the fees you earn.
         </p>
@@ -58,15 +58,17 @@ export default function PortfolioPage() {
       };
     });
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-8 md:px-8">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-8 md:px-10 xl:px-14">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Portfolio</h1>
+            <h1 className="text-[34px] font-medium tracking-[-0.035em] md:text-[44px]">
+              Portfolio
+            </h1>
             <SimulatedBadge />
           </div>
           <span
-            className="num text-5xl font-bold tracking-tight md:text-[56px] md:leading-none"
+            className="font-sans text-5xl font-medium tracking-[-0.04em] tabular-nums md:text-[56px] md:leading-none"
             data-testid="portfolio-total"
           >
             <Usd value={p?.totalUsd ?? 0} digits={2} />
