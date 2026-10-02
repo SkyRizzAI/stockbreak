@@ -46,8 +46,20 @@ function isTransient(e: unknown): boolean {
   );
 }
 
+export interface RetryOptions {
+  /**
+   * Retries after an HTTP 429. Background jobs can wait (default 6, about 16 s in total);
+   * a server handling a user request should give up fast and serve cached data instead.
+   */
+  rateLimitRetries?: number;
+}
+
 /** Default transport + retry with jittered exponential backoff on 429 and transient errors. */
-function retryingTransport(url: string): ReturnType<typeof createDefaultRpcTransport> {
+function retryingTransport(
+  url: string,
+  opts: RetryOptions = {},
+): ReturnType<typeof createDefaultRpcTransport> {
+  const maxLimited = opts.rateLimitRetries ?? 6;
   const base = createDefaultRpcTransport({ url });
   return (async (req) => {
     for (let attempt = 0; ; attempt++) {
@@ -55,7 +67,7 @@ function retryingTransport(url: string): ReturnType<typeof createDefaultRpcTrans
         return await base(req);
       } catch (e) {
         const limited = isRateLimited(e);
-        if (!(limited ? attempt < 6 : attempt < 3 && isTransient(e))) throw e;
+        if (!(limited ? attempt < maxLimited : attempt < 3 && isTransient(e))) throw e;
         const delay = 250 * 2 ** attempt + Math.random() * 250;
         await new Promise((r) => setTimeout(r, delay));
       }
@@ -63,9 +75,14 @@ function retryingTransport(url: string): ReturnType<typeof createDefaultRpcTrans
   }) as ReturnType<typeof createDefaultRpcTransport>;
 }
 
-export function createCtx(cluster: Cluster, rpcUrl: string, wsUrl: string): SolanaCtx {
+export function createCtx(
+  cluster: Cluster,
+  rpcUrl: string,
+  wsUrl: string,
+  opts: RetryOptions = {},
+): SolanaCtx {
   // Same API as createSolanaRpc(url); the cast narrows the cluster-generic transport type.
-  const rpc = createSolanaRpcFromTransport(retryingTransport(rpcUrl)) as unknown as Rpc;
+  const rpc = createSolanaRpcFromTransport(retryingTransport(rpcUrl, opts)) as unknown as Rpc;
   const rpcSubscriptions: RpcSubscriptions = createSolanaRpcSubscriptions(wsUrl as string);
   return { cluster, rpcUrl, rpc, rpcSubscriptions };
 }

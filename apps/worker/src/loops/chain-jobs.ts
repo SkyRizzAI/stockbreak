@@ -4,7 +4,6 @@ import {
   accrueFeesIx,
   createIndexAlt,
   describeError,
-  fetchAllIndexes,
   fetchFeeds,
   fits,
   type IndexState,
@@ -18,20 +17,21 @@ import {
   sendTx,
   syncResult,
   syncTargetsIx,
-  valueIndex,
 } from "@repo/sdk";
 import type { Address } from "@solana/kit";
+import { allIndexes, allValuations, invalidateIndexes } from "../chain-cache";
 import { chainNow, type WorkerCtx } from "../ctx";
 
 // ---------------- snapshot ----------------
 
 export async function snapshotTick(c: WorkerCtx): Promise<number> {
-  const all = await fetchAllIndexes(c);
+  const all = await allIndexes(c);
+  const values = await allValuations(c);
   const ts = new Date(Math.floor(Date.now() / 1000) * 1000);
   let n = 0;
-  for (const { address, data } of all) {
-    const v = await valueIndex(c, data);
-    if (v.effectiveSupply === 0n) continue;
+  for (const { address } of all) {
+    const v = values.get(address);
+    if (!v || v.effectiveSupply === 0n) continue;
     await insertSnapshot(c.db, {
       index: address,
       ts,
@@ -73,7 +73,8 @@ export async function snapshotTick(c: WorkerCtx): Promise<number> {
 const keeperBackoff = new Map<string, number>();
 
 export async function keeperTick(c: WorkerCtx): Promise<number> {
-  const all = await fetchAllIndexes(c);
+  const all = await allIndexes(c);
+  const values = await allValuations(c);
   const spread = (await market.fetchMarket(c.rpc, await marketPda())).data.spreadBps;
   const now = await chainNow(c);
   let done = 0;
@@ -82,8 +83,8 @@ export async function keeperTick(c: WorkerCtx): Promise<number> {
     if ((keeperBackoff.get(address) ?? 0) > Date.now()) continue;
     // One bad index (stale oracle, odd state) must never stop the rest of the run.
     try {
-      const v = await valueIndex(c, data);
-      if (v.effectiveSupply === 0n) continue;
+      const v = values.get(address);
+      if (!v || v.effectiveSupply === 0n) continue;
       const plan = planRebalance(data, v, { keeper: true, now, spreadBps: spread });
       if (!plan?.triggered) continue;
       const ixs = await rebalanceIxs(c.keeper, address as Address, data, plan);
@@ -102,6 +103,7 @@ export async function keeperTick(c: WorkerCtx): Promise<number> {
         lookupTables = [alt];
       }
       const sig = await sendTx(c, c.keeper, ixs, { lookupTables, computeUnitLimit: 800_000 });
+      invalidateIndexes(c);
       c.log(
         "keeper",
         `rebalanced ${data.symbol}: drift ${plan.driftBefore}→${plan.driftAfter} bps (${plan.reason}) ${sig}`,
@@ -118,7 +120,7 @@ export async function keeperTick(c: WorkerCtx): Promise<number> {
 // ---------------- fees ----------------
 
 export async function feesTick(c: WorkerCtx): Promise<number> {
-  const all = await fetchAllIndexes(c);
+  const all = await allIndexes(c);
   const now = await chainNow(c);
   let n = 0;
   for (const { address, data } of all) {
@@ -128,6 +130,7 @@ export async function feesTick(c: WorkerCtx): Promise<number> {
     if (data.assets.every((a) => a.balance === 0n)) continue;
     try {
       await sendTx(c, c.keeper, [await accrueFeesIx(address as Address, data)]);
+      invalidateIndexes(c);
       n++;
     } catch (e) {
       c.log("fees", `accrue ${data.symbol} failed: ${describeError(e)}`);
@@ -159,7 +162,7 @@ function backOffFollow(c: WorkerCtx, address: string, symbol: string, reason: st
 }
 
 export async function followTick(c: WorkerCtx): Promise<number> {
-  const all = await fetchAllIndexes(c);
+  const all = await allIndexes(c);
   const byAddr = new Map<string, IndexState>(all.map((x) => [x.address, x.data]));
   let n = 0;
   for (const { address, data } of all) {
@@ -203,6 +206,7 @@ export async function followTick(c: WorkerCtx): Promise<number> {
         await syncTargetsIx(c.keeper, address as Address, data, data.parent.value, parent),
       ]);
       followBackoff.delete(address);
+      invalidateIndexes(c);
       c.log("follow", `synced ${data.symbol} to parent ${parent.symbol} ${sig}`);
       n++;
     } catch (e) {

@@ -1,4 +1,5 @@
 import "server-only";
+import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR } from "@solana/kit";
 import { NextResponse } from "next/server";
 import { toJsonSafe } from "../json";
 
@@ -26,6 +27,15 @@ export function intParam(v: string | null, fallback: number, min: number, max: n
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
+/** RPC transport refused us (HTTP 429 / 503): a temporary condition, not a server bug. */
+function isRpcBusy(e: unknown): boolean {
+  if (isSolanaError(e, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
+    const code = (e.context as { statusCode?: number }).statusCode;
+    return code === 429 || code === 503;
+  }
+  return false;
+}
+
 export async function guard<T>(fn: () => Promise<T>): Promise<NextResponse> {
   try {
     const r = await fn();
@@ -34,6 +44,10 @@ export async function guard<T>(fn: () => Promise<T>): Promise<NextResponse> {
     // A malformed request body is the caller's mistake, not a server error.
     if (e instanceof SyntaxError && /JSON/.test(e.message)) return fail(400, "Invalid JSON body");
     if (e instanceof UserError) return fail(e.status, e.message);
+    if (isRpcBusy(e)) {
+      console.error("[api] RPC rate limited or unavailable");
+      return fail(503, "The Solana network is busy right now. Try again in a few seconds.");
+    }
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[api]", msg);
     return fail(500, msg.split("\n")[0] ?? "Internal error");

@@ -24,6 +24,14 @@
     "WEB_URL": "https://stockbreak.fun",
     // Required by the env schema; on Workers @repo/db uses the D1 binding `DB` (D051).
     "DATABASE_URL": "d1:DB",
-    "PRICE_MODE": "live"
+    "PRICE_MODE": "live",
+    // RPC budget (a free RPC plan has a monthly credit cap): slower loops than localnet.
+    // Oracles stay far inside the devnet max age (600 s); the indexer still sees a join
+    // within ~10 s; the full resync is a safety net only.
+    "PRICE_INTERVAL": "30",
+    "INDEXER_INTERVAL": "10",
+    "KEEPER_INTERVAL": "60",
+    "FOLLOW_INTERVAL": "60",
+    "RESYNC_INTERVAL": "600"
   }
 }

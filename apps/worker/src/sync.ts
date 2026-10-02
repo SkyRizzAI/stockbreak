@@ -37,8 +37,13 @@ export function assetsJson(c: WorkerCtx, st: IndexState) {
   }));
 }
 
-export async function syncIndex(c: WorkerCtx, address: string): Promise<IndexState | null> {
-  const st = await fetchMaybeIndex(c, address as Address);
+/** Upsert one index row from chain; pass `known` when the state was just fetched. */
+export async function syncIndex(
+  c: WorkerCtx,
+  address: string,
+  known?: IndexState,
+): Promise<IndexState | null> {
+  const st = known ?? (await fetchMaybeIndex(c, address as Address));
   if (!st) return null;
   const creatorUser = await getUser(c.db, st.creator);
   await upsertIndex(c.db, {

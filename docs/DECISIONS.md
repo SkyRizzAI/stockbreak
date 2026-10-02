@@ -367,3 +367,24 @@ Format: tanggal · konteks · opsi · pilihan · alasan.
 - Risiko: presisi u64 di atas 2^53 (nilai demo jauh di bawahnya; penulisan ditolak, bukan dibulatkan). `node:sqlite` masih eksperimental di Node (peringatan saat `next dev`). D1 membutuhkan Workers Paid (Free: 50 query per invocation).
 - Alternatif ditolak: tetap Postgres dengan Neon Launch berbayar atau Supabase (user memilih D1), dua implementasi query (Postgres lokal + D1 produksi), libSQL sebagai driver lokal (lihat di atas).
 
+
+## D052 — 2026-10-02 — Anggaran RPC worker produksi + web tahan RPC sibuk
+- **Masalah:** sejak 28 Sep, kunci Helius devnet membalas 429 "max usage reached" (kredit bulanan paket gratis habis). Akibatnya:
+  - cron Cloudflare berhenti menulis harga, sehingga oracle basi dan join/redeem/create gagal;
+  - `/api/indexes/<pk>` mencoba ulang selama ±18 dtk lalu 500, sehingga halaman index terasa macet.
+
+  Perkiraan pemakaian sebelumnya ±450 panggilan per menit:
+  - `getProgramAccounts` ±7×/menit (resync, snapshot, keeper ×2, fees, follow ×2);
+  - `valueIndex` 2 panggilan per index per loop (snapshot + keeper, 34 index);
+  - resync semua index tiap menit;
+  - indexer tiap 2 dtk.
+- **Keputusan:**
+  - Worker memakai satu tampilan bersama `apps/worker/src/chain-cache.ts`, berlaku 10 dtk dan dibatalkan setelah transaksi keeper/fees/follow. Isinya satu `getProgramAccounts` ditambah valuasi semua index lewat dua `getMultipleAccounts` (`valueIndexes` di SDK). Resync memakai state yang sudah diambil (`syncIndex(c, addr, known)`). `fetchMaybeIndex` cukup satu panggilan, dan fetch akun di-chunk per 100.
+  - Interval khusus Cloudflare (vars `apps/worker/wrangler.jsonc`): harga 30 dtk (oracle tetap jauh di bawah batas 600 dtk), indexer 10 dtk, keeper/follow 60 dtk, resync 600 dtk. Localnet tidak berubah.
+  - Web: request user hanya 1 kali retry saat 429 (`createCtx(…, { rateLimitRetries: 1 })`). Detail index dicache 15 dtk; saat RPC gagal, web menyajikan detail valid terakhir (memori isolate + `caches.default` Cloudflare, maks 6 jam). Error RPC 429/503 menjadi 503 "The Solana network is busy…", bukan 500 dengan kode mentah.
+- **Perkiraan setelahnya:** ±20–25 panggilan per menit (±1 juta per bulan), turun sekitar 20×. Itu masih bisa melewati batas kredit paket gratis Helius, jadi untuk produksi pakai salah satu:
+  - RPC tanpa kredit bulanan (mis. `api.devnet.solana.com`; batasnya per IP, bukan per bulan); atau
+  - paket berbayar.
+- **Alternatif ditolak:**
+  - memperpanjang interval lebih jauh (harga dan aktivitas jadi terasa mati);
+  - menyimpan detail index di D1 (perubahan skema/kontrak di hari penjurian).

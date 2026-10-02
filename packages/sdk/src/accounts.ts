@@ -42,6 +42,14 @@ export interface FeedInfo {
 
 const nowSecs = () => BigInt(Math.floor(Date.now() / 1000));
 
+/** getMultipleAccounts takes at most 100 addresses per call. */
+const MAX_MULTIPLE = 100;
+function chunks<T>(xs: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += MAX_MULTIPLE) out.push(xs.slice(i, i + MAX_MULTIPLE));
+  return out;
+}
+
 /** Decode a mint (Token or Token-2022) and its effective multiplier at `now`. */
 export function decodeMint(
   address: Address,
@@ -74,7 +82,9 @@ export async function fetchMints(
 ): Promise<Map<Address, MintInfo>> {
   const out = new Map<Address, MintInfo>();
   if (!mints.length) return out;
-  const accs = await fetchEncodedAccounts(ctx.rpc, mints);
+  const accs = (
+    await Promise.all(chunks([...new Set(mints)]).map((c) => fetchEncodedAccounts(ctx.rpc, c)))
+  ).flat();
   for (const a of accs) {
     if (!a.exists) continue;
     out.set(a.address, decodeMint(a.address, a.programAddress, a.data as Uint8Array));
@@ -88,7 +98,11 @@ export async function fetchFeeds(
 ): Promise<Map<Address, FeedInfo>> {
   const out = new Map<Address, FeedInfo>();
   if (!feeds.length) return out;
-  const accs = await market.fetchAllMaybeOracleFeed(ctx.rpc, feeds);
+  const accs = (
+    await Promise.all(
+      chunks([...new Set(feeds)]).map((c) => market.fetchAllMaybeOracleFeed(ctx.rpc, c)),
+    )
+  ).flat();
   for (const a of accs) {
     if (!a.exists) continue;
     out.set(a.address, {
@@ -130,9 +144,9 @@ export async function fetchMaybeIndex(
   const { value } = await ctx.rpc.getAccountInfo(address, { encoding: "base64" }).send();
   // Missing, or not an Index account of this program (e.g. a wallet address).
   if (!value || value.owner !== vault.INDEX_VAULT_PROGRAM_ADDRESS) return null;
+  // Decode the bytes already fetched (one RPC call, not two).
   try {
-    const a = await vault.fetchMaybeIndexAccount(ctx.rpc, address);
-    return a.exists ? a.data : null;
+    return vault.getIndexAccountDecoder().decode(getBase64Encoder().encode(value.data[0]));
   } catch {
     return null;
   }
@@ -191,6 +205,36 @@ export async function valueIndex(ctx: SolanaCtx, index: IndexState): Promise<Val
     ctx,
     index.assets.map((a) => a.oracle),
   );
+  return valuationOf(index, mints, feeds);
+}
+
+/**
+ * Value many indexes with two batched reads (all mints, all feeds) instead of two per
+ * index. Used by background jobs that look at every index each minute.
+ */
+export async function valueIndexes(
+  ctx: SolanaCtx,
+  indexes: { address: Address; data: IndexState }[],
+): Promise<Map<Address, Valuation>> {
+  const [mints, feeds] = await Promise.all([
+    fetchMints(
+      ctx,
+      indexes.flatMap(({ data }) => [...data.assets.map((a) => a.mint), data.shareMint]),
+    ),
+    fetchFeeds(
+      ctx,
+      indexes.flatMap(({ data }) => data.assets.map((a) => a.oracle)),
+    ),
+  ]);
+  return new Map(indexes.map(({ address, data }) => [address, valuationOf(data, mints, feeds)]));
+}
+
+/** Valuation from already fetched mints and feeds (no RPC). */
+export function valuationOf(
+  index: IndexState,
+  mints: Map<Address, MintInfo>,
+  feeds: Map<Address, FeedInfo>,
+): Valuation {
   const values = index.assets.map((a) => {
     const m = mints.get(a.mint);
     const f = feeds.get(a.oracle);

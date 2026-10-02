@@ -36,7 +36,9 @@ export function db(): Db {
 let chainCache: SolanaCtx | null = null;
 export function chain(): SolanaCtx {
   const e = serverEnv();
-  chainCache ??= createCtx(e.CLUSTER, e.RPC_URL, e.WS_URL);
+  // A page is waiting: give up quickly on a rate-limited RPC (callers fall back to the
+  // last good data) instead of retrying for ~16 s like the background worker does.
+  chainCache ??= createCtx(e.CLUSTER, e.RPC_URL, e.WS_URL, { rateLimitRetries: 1 });
   return chainCache;
 }
 

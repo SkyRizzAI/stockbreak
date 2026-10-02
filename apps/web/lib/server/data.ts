@@ -218,15 +218,59 @@ export async function chainNow(): Promise<number> {
 
 /** Several panels poll the same index at once: share one computation for a few seconds. */
 const detailCache = new Map<string, { at: number; value: Promise<IndexDetail | null> }>();
-const DETAIL_TTL_MS = 4_000;
+const DETAIL_TTL_MS = 15_000;
+/** Last good detail per index, served when the RPC fails (rate limit, outage). */
+const lastGood = new Map<string, { at: number; value: IndexDetail }>();
+const STALE_MAX_MS = 6 * 3_600_000;
+
+/** Cloudflare's edge cache when running on Workers (survives isolate restarts); absent locally. */
+function edgeCache(): Cache | null {
+  const c = (globalThis as { caches?: { default?: Cache } }).caches?.default;
+  return c ?? null;
+}
+const edgeKey = (pubkey: string) => `https://stockbreak.internal/index-detail/${pubkey}`;
+
+async function rememberDetail(pubkey: string, value: IndexDetail): Promise<void> {
+  lastGood.set(pubkey, { at: Date.now(), value });
+  try {
+    await edgeCache()?.put(
+      edgeKey(pubkey),
+      new Response(JSON.stringify(value), {
+        headers: { "content-type": "application/json", "cache-control": "max-age=21600" },
+      }),
+    );
+  } catch {
+    // Best effort: the in-memory copy still works for this isolate.
+  }
+}
+
+async function staleDetail(pubkey: string): Promise<IndexDetail | null> {
+  const mem = lastGood.get(pubkey);
+  if (mem && Date.now() - mem.at < STALE_MAX_MS) return mem.value;
+  try {
+    const r = await edgeCache()?.match(edgeKey(pubkey));
+    return r ? ((await r.json()) as IndexDetail) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function indexDetail(pubkey: string): Promise<IndexDetail | null> {
   const hit = detailCache.get(pubkey);
   if (hit && Date.now() - hit.at < DETAIL_TTL_MS) return hit.value;
-  const value = computeIndexDetail(pubkey).catch((e: unknown) => {
-    detailCache.delete(pubkey);
-    throw e;
-  });
+  const value = computeIndexDetail(pubkey).then(
+    async (d) => {
+      if (d) await rememberDetail(pubkey, d);
+      return d;
+    },
+    async (e: unknown) => {
+      detailCache.delete(pubkey);
+      // RPC trouble: the last good numbers (a few minutes old) beat a spinner and a 500.
+      const stale = await staleDetail(pubkey);
+      if (stale) return stale;
+      throw e;
+    },
+  );
   detailCache.set(pubkey, { at: Date.now(), value });
   for (const [k, v] of detailCache) if (Date.now() - v.at > 60_000) detailCache.delete(k);
   return value;

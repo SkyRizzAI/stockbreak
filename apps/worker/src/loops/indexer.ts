@@ -9,14 +9,9 @@ import {
   type PositionDelta,
   setIndexerState,
 } from "@repo/db";
-import {
-  decodeVaultEvents,
-  fetchAllIndexes,
-  INDEX_VAULT,
-  type IndexState,
-  toJson,
-} from "@repo/sdk";
-import type { Address, Signature } from "@solana/kit";
+import { decodeVaultEvents, INDEX_VAULT, type IndexState, toJson } from "@repo/sdk";
+import type { Signature } from "@solana/kit";
+import { allIndexes } from "../chain-cache";
 import type { WorkerCtx } from "../ctx";
 import { PROGRAM, reconcilePositions, SharePrices, syncIndex } from "../sync";
 
@@ -211,10 +206,10 @@ export async function indexerTick(c: WorkerCtx): Promise<number> {
  * and refresh known holders' shares from chain (share transfers are not indexed).
  */
 export async function fullResync(c: WorkerCtx): Promise<number> {
-  const all = await fetchAllIndexes(c);
+  const all = await allIndexes(c);
   const byAddr = new Map<string, IndexState>();
   for (const { address, data } of all) {
-    await syncIndex(c, address as Address);
+    await syncIndex(c, address, data);
     byAddr.set(address, data);
   }
   const pairs: { wallet: string; index: string; st: IndexState }[] = [];
