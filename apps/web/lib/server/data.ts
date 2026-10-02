@@ -1,6 +1,6 @@
 import "server-only";
 /** Read models for pages and API routes (DB + live chain valuation). */
-import { ASSETS } from "@repo/config";
+import { ASSETS, CLUSTER_PARAMS } from "@repo/config";
 import {
   activity as activityRows,
   allIndexes,
@@ -46,6 +46,7 @@ import type {
   Holder,
   IndexDetail,
   IndexSummary,
+  LiveAsset,
   PendingUpdateJson,
   Portfolio,
   PositionRow,
@@ -54,7 +55,7 @@ import type {
   StrategyJson,
   StrategyModeName,
 } from "../types";
-import { chain, db, symbolOf } from "./ctx";
+import { chain, db, deployment, serverEnv, symbolOf } from "./ctx";
 
 const DAY = 86_400_000;
 const n6 = (v: bigint | string | number | null | undefined) =>
@@ -265,15 +266,152 @@ export function indexDetail(pubkey: string): Promise<IndexDetail | null> {
     },
     async (e: unknown) => {
       detailCache.delete(pubkey);
-      // RPC trouble: the last good numbers (a few minutes old) beat a spinner and a 500.
+      // RPC trouble: the last good numbers beat a spinner and a 500. Without any, rebuild
+      // the page from what the indexer stored (degraded, but the page still works).
       const stale = await staleDetail(pubkey);
-      if (stale) return stale;
+      if (stale) return { ...stale, degraded: true };
+      const fromDb = await dbIndexDetail(pubkey).catch(() => null);
+      if (fromDb) return fromDb;
       throw e;
     },
   );
   detailCache.set(pubkey, { at: Date.now(), value });
   for (const [k, v] of detailCache) if (Date.now() - v.at > 60_000) detailCache.delete(k);
   return value;
+}
+
+type AssetRowJson = {
+  mint: string;
+  symbol?: string;
+  tokenProgram?: string;
+  oracle?: string;
+  targetWeightBps: number;
+  kind?: string;
+  decimals?: number;
+  balance?: string;
+};
+const num = (v: unknown, d = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+};
+
+/**
+ * Index detail from the database only (indexer rows, snapshots, stored prices), used when
+ * the RPC is unreachable. Numbers are as of the worker's last sync; `degraded` tells the
+ * page to say so.
+ */
+async function dbIndexDetail(pubkey: string): Promise<IndexDetail | null> {
+  const d = db();
+  const row = await getIndex(d, pubkey);
+  if (!row) return null;
+  const [summaries, priceRows, all, ipoEvents] = await Promise.all([
+    indexSummaries((r) => r.pubkey === pubkey),
+    latestPrices(d),
+    allIndexes(d),
+    eventsOfType(d, ["IpoMigrated"]),
+  ]);
+  const summary = summaries[0];
+  if (!summary) return null;
+  const params = CLUSTER_PARAMS[serverEnv().CLUSTER];
+  const price = new Map(priceRows.map((p) => [p.symbol, n6(p.priceMicroUsd)]));
+  const assets = (row.assets as AssetRowJson[]) ?? [];
+  const values = assets.map((a) => {
+    const sym = a.symbol ?? symbolOf(a.mint);
+    const units = num(a.balance) / 10 ** num(a.decimals, 6);
+    return units * (price.get(sym) ?? 0);
+  });
+  const nav = values.reduce((x, y) => x + y, 0) || summary.navUsd;
+  const weight = (v: number) => (nav > 0 ? Math.round((v / nav) * 10_000) : 0);
+  const drift = assets.map((a, i) => Math.abs(weight(values[i] ?? 0) - a.targetWeightBps));
+  const fees = row.fees as { mgmtFeeBps?: number; entryFeeBps?: number; exitFeeBps?: number };
+  const st = row.strategy as Record<string, unknown>;
+  const mgrs = ((row.managers as string[]) ?? []).filter(
+    (m) => m !== "11111111111111111111111111111111",
+  );
+  const mgrUsers = await getUsers(d, mgrs);
+  const kind = (k?: string) =>
+    (k === "PreIpo" || k === "Stable" ? k : "Stock") as LiveAsset["kind"];
+  return {
+    ...summary,
+    navUsd: nav,
+    degraded: true,
+    thesis: row.thesis ?? null,
+    uri: row.uri,
+    shareMint: row.shareMint,
+    indexId: row.indexId.toString(),
+    lookupTable: row.lookupTable ?? null,
+    managers: mgrs.map((m) => ({
+      wallet: m,
+      handle: mgrUsers.get(m)?.handle ?? null,
+      isAgent: mgrUsers.get(m)?.isAgent ?? false,
+    })),
+    live: assets.map((a, i) => {
+      const sym = a.symbol ?? symbolOf(a.mint);
+      return {
+        mint: a.mint,
+        symbol: sym,
+        name: assetName(sym),
+        kind: kind(a.kind),
+        tokenProgram: a.tokenProgram ?? "",
+        oracle: a.oracle ?? "",
+        decimals: num(a.decimals, 6),
+        balance: a.balance ?? "0",
+        targetWeightBps: a.targetWeightBps,
+        weightBps: weight(values[i] ?? 0),
+        valueUsd: values[i] ?? 0,
+        priceUsd: price.get(sym) ?? 0,
+        multiplier: 1,
+      };
+    }),
+    navLiveUsd: nav,
+    sharePriceLive: summary.sharePrice,
+    supply: "0",
+    effectiveSupply: "0",
+    driftSumBps: drift.reduce((x, y) => x + y, 0),
+    driftMaxBps: drift.length ? Math.max(...drift) : 0,
+    fees: {
+      mgmtFeeBps: num(fees.mgmtFeeBps),
+      entryFeeBps: num(fees.entryFeeBps),
+      exitFeeBps: num(fees.exitFeeBps),
+      platformFeeBps: params.platformFeeBps,
+      cloneRoyaltyBps: params.cloneRoyaltyBps,
+    },
+    owed: { creator: "0", platform: "0", parent: "0" },
+    strategy: {
+      mode: (["Manual", "Threshold", "Periodic"].includes(String(st.mode))
+        ? st.mode
+        : "Threshold") as StrategyJson["mode"],
+      driftThresholdBps: num(st.driftThresholdBps),
+      periodSecs: num(st.periodSecs),
+      maxSlippageBps: num(st.maxSlippageBps),
+      cooldownSecs: num(st.cooldownSecs),
+      allowKeeper: st.allowKeeper !== false,
+    },
+    pending: null,
+    lastRebalanceTs: 0,
+    lastFeeTs: 0,
+    chainNow: Math.floor(Date.now() / 1000),
+    timelockSecs: params.timelockSecs,
+    children: all
+      .filter((r) => r.parent === pubkey)
+      .map((c2) => ({
+        pubkey: c2.pubkey,
+        name: c2.name,
+        symbol: c2.symbol,
+        followsParent: c2.followsParent,
+      })),
+    ipoEvents: ipoEvents
+      .filter((e) => e.index === pubkey)
+      .map((e) => {
+        const data = e.data as { oldMint: string; newMint: string };
+        return {
+          oldSymbol: symbolOf(data.oldMint),
+          newSymbol: symbolOf(data.newMint),
+          ts: e.ts.toISOString(),
+        };
+      }),
+    platformTreasury: deployment()?.platformTreasury ?? "",
+  };
 }
 
 async function computeIndexDetail(pubkey: string): Promise<IndexDetail | null> {

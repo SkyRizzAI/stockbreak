@@ -135,6 +135,8 @@ export interface IndexDetail extends IndexSummary {
   children: { pubkey: string; name: string; symbol: string; followsParent: boolean }[];
   ipoEvents: { oldSymbol: string; newSymbol: string; ts: string }[];
   platformTreasury: string;
+  /** Live chain data was unavailable: numbers are the last saved ones (RPC outage). */
+  degraded?: boolean;
 }
 
 export interface SeriesPoint {

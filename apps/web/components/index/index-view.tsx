@@ -389,6 +389,11 @@ export function IndexView({ pubkey }: { pubkey: string }) {
                   <IndexTags i={d} />
                   <SimulatedBadge />
                 </div>
+                {d.degraded ? (
+                  <p className="text-xs text-warn" data-testid="index-degraded">
+                    Live chain data is unavailable right now. Showing the last saved values.
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="flex gap-2">

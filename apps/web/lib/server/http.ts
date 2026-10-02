@@ -27,11 +27,14 @@ export function intParam(v: string | null, fallback: number, min: number, max: n
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
-/** RPC transport refused us (HTTP 429 / 503): a temporary condition, not a server bug. */
+/**
+ * RPC transport refused us: rate limit or quota (429), outage (502/503/504), or a provider
+ * blocking this host (403; e.g. the public devnet RPC rejects cloud IPs). Not a server bug.
+ */
 function isRpcBusy(e: unknown): boolean {
   if (isSolanaError(e, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
     const code = (e.context as { statusCode?: number }).statusCode;
-    return code === 429 || code === 503;
+    return code === 403 || code === 429 || code === 502 || code === 503 || code === 504;
   }
   return false;
 }
